@@ -396,6 +396,7 @@ export const make = (
         yield* handleSessionUpdate({
           queue: eventQueue,
           modeStateRef,
+          configOptionsRef,
           toolCallsRef,
           assistantSegmentRef,
           assistantItemRuntimeId,
@@ -841,9 +842,18 @@ function configOptionCurrentValueMatches(
   return currentValue.trim() === String(value).trim();
 }
 
+export function configOptionsFromSessionUpdate(
+  notification: EffectAcpSchema.SessionNotification,
+): ReadonlyArray<EffectAcpSchema.SessionConfigOption> | undefined {
+  return notification.update.sessionUpdate === "config_option_update"
+    ? notification.update.configOptions
+    : undefined;
+}
+
 const handleSessionUpdate = ({
   queue,
   modeStateRef,
+  configOptionsRef,
   toolCallsRef,
   assistantSegmentRef,
   assistantItemRuntimeId,
@@ -851,12 +861,17 @@ const handleSessionUpdate = ({
 }: {
   readonly queue: Queue.Queue<AcpSessionRuntimeEvent>;
   readonly modeStateRef: Ref.Ref<AcpSessionModeState | undefined>;
+  readonly configOptionsRef: Ref.Ref<ReadonlyArray<EffectAcpSchema.SessionConfigOption>>;
   readonly toolCallsRef: Ref.Ref<Map<string, AcpToolCallState>>;
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
   readonly assistantItemRuntimeId: string;
   readonly params: EffectAcpSchema.SessionNotification;
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
+    const updatedConfigOptions = configOptionsFromSessionUpdate(params);
+    if (updatedConfigOptions !== undefined) {
+      yield* Ref.set(configOptionsRef, updatedConfigOptions);
+    }
     const parsed = parseSessionUpdateEvent(params);
     if (parsed.modeId) {
       yield* Ref.update(modeStateRef, (current) =>

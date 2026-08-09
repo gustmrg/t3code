@@ -25,10 +25,12 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DEFAULT_SERVER_SETTINGS,
   type ClaudeSettings,
   type CodexSettings,
   type CursorSettings,
   type GrokSettings,
+  type KimiSettings,
   type OpenCodeSettings,
   ProviderDriverKind,
   type ProviderInstanceConfigMap,
@@ -47,8 +49,10 @@ import { ClaudeDriver } from "../Drivers/ClaudeDriver.ts";
 import { CodexDriver } from "../Drivers/CodexDriver.ts";
 import { CursorDriver } from "../Drivers/CursorDriver.ts";
 import { GrokDriver } from "../Drivers/GrokDriver.ts";
+import { KimiDriver } from "../Drivers/KimiDriver.ts";
 import { OpenCodeDriver } from "../Drivers/OpenCodeDriver.ts";
 import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
+import { deriveProviderInstanceConfigMap } from "./ProviderInstanceRegistryHydration.ts";
 import { NoOpProviderEventLoggers, ProviderEventLoggers } from "./ProviderEventLoggers.ts";
 import { makeProviderInstanceRegistry } from "./ProviderInstanceRegistryLive.ts";
 
@@ -124,6 +128,13 @@ const makeGrokConfig = (overrides: Partial<GrokSettings>): GrokSettings => ({
   ...overrides,
 });
 
+const makeKimiConfig = (overrides: Partial<KimiSettings>): KimiSettings => ({
+  enabled: false,
+  binaryPath: "kimi",
+  customModels: [],
+  ...overrides,
+});
+
 const makeOpenCodeConfig = (overrides: Partial<OpenCodeSettings>): OpenCodeSettings => ({
   enabled: false,
   binaryPath: "opencode",
@@ -131,6 +142,47 @@ const makeOpenCodeConfig = (overrides: Partial<OpenCodeSettings>): OpenCodeSetti
   serverPassword: "",
   customModels: [],
   ...overrides,
+});
+
+describe("ProviderInstanceRegistryHydration — Kimi legacy mirror", () => {
+  it("synthesizes the default Kimi instance from legacy settings", () => {
+    const kimiConfig = makeKimiConfig({ binaryPath: "/opt/kimi/bin/kimi" });
+    const configMap = deriveProviderInstanceConfigMap({
+      ...DEFAULT_SERVER_SETTINGS,
+      providers: {
+        ...DEFAULT_SERVER_SETTINGS.providers,
+        kimi: kimiConfig,
+      },
+    });
+
+    expect(configMap[ProviderInstanceId.make("kimi")]).toEqual({
+      driver: ProviderDriverKind.make("kimi"),
+      config: kimiConfig,
+    });
+  });
+
+  it("keeps an explicit default Kimi instance instead of the legacy mirror", () => {
+    const explicitConfig = makeKimiConfig({ binaryPath: "/explicit/kimi" });
+    const kimiInstanceId = ProviderInstanceId.make("kimi");
+    const configMap = deriveProviderInstanceConfigMap({
+      ...DEFAULT_SERVER_SETTINGS,
+      providers: {
+        ...DEFAULT_SERVER_SETTINGS.providers,
+        kimi: makeKimiConfig({ binaryPath: "/legacy/kimi" }),
+      },
+      providerInstances: {
+        [kimiInstanceId]: {
+          driver: ProviderDriverKind.make("kimi"),
+          config: explicitConfig,
+        },
+      },
+    });
+
+    expect(configMap[kimiInstanceId]).toEqual({
+      driver: ProviderDriverKind.make("kimi"),
+      config: explicitConfig,
+    });
+  });
 });
 
 describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
@@ -294,12 +346,14 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       const claudeId = ProviderInstanceId.make("claude_default");
       const cursorId = ProviderInstanceId.make("cursor_default");
       const grokId = ProviderInstanceId.make("grok_default");
+      const kimiId = ProviderInstanceId.make("kimi_default");
       const openCodeId = ProviderInstanceId.make("opencode_default");
 
       const codexDriverKind = ProviderDriverKind.make("codex");
       const claudeDriverKind = ProviderDriverKind.make("claudeAgent");
       const cursorDriverKind = ProviderDriverKind.make("cursor");
       const grokDriverKind = ProviderDriverKind.make("grok");
+      const kimiDriverKind = ProviderDriverKind.make("kimi");
       const openCodeDriverKind = ProviderDriverKind.make("opencode");
 
       const configMap: ProviderInstanceConfigMap = {
@@ -330,6 +384,12 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
           enabled: false,
           config: makeGrokConfig({}),
         },
+        [kimiId]: {
+          driver: kimiDriverKind,
+          displayName: "Kimi Code",
+          enabled: false,
+          config: makeKimiConfig({}),
+        },
         [openCodeId]: {
           driver: openCodeDriverKind,
           displayName: "OpenCode",
@@ -339,7 +399,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       };
 
       const { registry } = yield* makeProviderInstanceRegistry({
-        drivers: [CodexDriver, ClaudeDriver, CursorDriver, GrokDriver, OpenCodeDriver],
+        drivers: [CodexDriver, ClaudeDriver, CursorDriver, GrokDriver, KimiDriver, OpenCodeDriver],
         configMap,
       });
 
@@ -349,9 +409,9 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       expect(unavailable).toEqual([]);
 
       const instances = yield* registry.listInstances;
-      expect(instances).toHaveLength(5);
+      expect(instances).toHaveLength(6);
       expect(instances.map((instance) => instance.instanceId).toSorted()).toEqual(
-        [codexId, claudeId, cursorId, grokId, openCodeId].toSorted(),
+        [codexId, claudeId, cursorId, grokId, kimiId, openCodeId].toSorted(),
       );
 
       // Instance lookup by id resolves each instance to its own bundle —
@@ -361,16 +421,19 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       const claude = yield* registry.getInstance(claudeId);
       const cursor = yield* registry.getInstance(cursorId);
       const grok = yield* registry.getInstance(grokId);
+      const kimi = yield* registry.getInstance(kimiId);
       const openCode = yield* registry.getInstance(openCodeId);
       expect(codex?.driverKind).toBe(codexDriverKind);
       expect(claude?.driverKind).toBe(claudeDriverKind);
       expect(cursor?.driverKind).toBe(cursorDriverKind);
       expect(grok?.driverKind).toBe(grokDriverKind);
+      expect(kimi?.driverKind).toBe(kimiDriverKind);
       expect(openCode?.driverKind).toBe(openCodeDriverKind);
       expect(codex?.displayName).toBe("Codex");
       expect(claude?.displayName).toBe("Claude");
       expect(cursor?.displayName).toBe("Cursor");
       expect(grok?.displayName).toBe("Grok");
+      expect(kimi?.displayName).toBe("Kimi Code");
       expect(openCode?.displayName).toBe("OpenCode");
 
       // Every instance owns its own set of closures — no sharing across
@@ -383,6 +446,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
         claude!.adapter,
         cursor!.adapter,
         grok!.adapter,
+        kimi!.adapter,
         openCode!.adapter,
       ];
       expect(new Set(adapters).size).toBe(adapters.length);
@@ -391,6 +455,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
         claude!.textGeneration,
         cursor!.textGeneration,
         grok!.textGeneration,
+        kimi!.textGeneration,
         openCode!.textGeneration,
       ];
       expect(new Set(textGenerations).size).toBe(textGenerations.length);
@@ -399,6 +464,7 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
         claude!.snapshot,
         cursor!.snapshot,
         grok!.snapshot,
+        kimi!.snapshot,
         openCode!.snapshot,
       ];
       expect(new Set(snapshots).size).toBe(snapshots.length);
@@ -434,6 +500,12 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       expect(grokSnapshot.driver).toBe(grokDriverKind);
       expect(grokSnapshot.enabled).toBe(false);
       expect(grokSnapshot.continuation?.groupKey).toBe(`${grokDriverKind}:instance:${grokId}`);
+
+      const kimiSnapshot = yield* kimi!.snapshot.getSnapshot;
+      expect(kimiSnapshot.instanceId).toBe(kimiId);
+      expect(kimiSnapshot.driver).toBe(kimiDriverKind);
+      expect(kimiSnapshot.enabled).toBe(false);
+      expect(kimiSnapshot.continuation?.groupKey).toBe(`${kimiDriverKind}:instance:${kimiId}`);
 
       const openCodeSnapshot = yield* openCode!.snapshot.getSnapshot;
       expect(openCodeSnapshot.instanceId).toBe(openCodeId);

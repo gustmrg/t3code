@@ -34,6 +34,7 @@ const CONTEXT_WINDOW = selectDescriptor(
 );
 
 const CODEX = ProviderDriverKind.make("codex");
+const KIMI = ProviderDriverKind.make("kimi");
 
 function display(descriptors: ReadonlyArray<ProviderOptionDescriptor>) {
   return buildTraitsTriggerDisplay({
@@ -77,6 +78,28 @@ describe("buildTraitsTriggerDisplay", () => {
       label: "High",
       showFastModeIcon: true,
     });
+  });
+
+  it("shows Kimi's negotiated thinking effort in the trigger", () => {
+    const thinking = selectDescriptor(
+      "thinking",
+      [
+        { id: "off", label: "Thinking Off" },
+        { id: "low", label: "Thinking Low" },
+        { id: "high", label: "Thinking High", isDefault: true },
+        { id: "max", label: "Thinking Max" },
+      ],
+      "high",
+    );
+
+    expect(
+      buildTraitsTriggerDisplay({
+        provider: KIMI,
+        descriptors: [thinking],
+        primarySelectDescriptorId: "thinking",
+        ultrathinkPromptControlled: false,
+      }),
+    ).toEqual({ label: "Thinking High", showFastModeIcon: false });
   });
 
   it("keeps non-fastMode booleans as text labels", () => {

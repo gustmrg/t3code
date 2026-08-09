@@ -19,10 +19,24 @@ import {
   findLatestProposedPlan,
   hasActionableProposedPlan,
   isLatestTurnSettled,
+  PROVIDER_OPTIONS,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workEntryIndicatesToolSuccess,
 } from "./session-logic";
+
+describe("provider options", () => {
+  it("lists Kimi Code exactly once as an available provider", () => {
+    expect(PROVIDER_OPTIONS.filter((option) => option.value === "kimi")).toEqual([
+      {
+        value: "kimi",
+        label: "Kimi Code",
+        available: true,
+        pickerSidebarBadge: "new",
+      },
+    ]);
+  });
+});
 
 let nextActivityId = 0;
 

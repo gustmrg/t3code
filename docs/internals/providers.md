@@ -7,7 +7,7 @@ orchestration layer does not know which one is behind a thread.
 
 ## Built-in drivers
 
-[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS` with five entries:
+[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS` with six entries:
 
 | Driver kind   | Driver source                           |
 | ------------- | --------------------------------------- |
@@ -15,6 +15,7 @@ orchestration layer does not know which one is behind a thread.
 | `claudeAgent` | [`Drivers/ClaudeDriver.ts`][claude]     |
 | `cursor`      | [`Drivers/CursorDriver.ts`][cursor]     |
 | `grok`        | [`Drivers/GrokDriver.ts`][grok]         |
+| `kimi`        | [`Drivers/KimiDriver.ts`][kimi]         |
 | `opencode`    | [`Drivers/OpenCodeDriver.ts`][opencode] |
 
 Each driver declares its `driverKind`, a `configSchema`, and a `create` function that builds an
@@ -22,6 +23,14 @@ adapter in a child scope. Adapter implementations live beside them in
 `apps/server/src/provider/Layers/` (`CodexAdapter.ts`, `ClaudeAdapter.ts`, and so on) and conform to
 [`ProviderAdapter.ts`][adapter]. Read the driver plus its adapter to see how a specific agent's
 transport, config, and event shapes are mapped.
+
+Kimi Code uses the shared ACP stdio runtime. Health checks and background text generation own
+temporary Kimi sessions and must issue `session/delete` in guaranteed cleanup; normal conversation
+sessions remain durable for resume. Kimi multiplexes approvals, questions, and plan reviews over
+`session/request_permission`, so its adapter classifies the option-ID namespace before considering
+full-access auto-approval. Only recognized standard approval IDs may auto-approve. `q*` and
+`plan_*` options always become canonical `user-input.*` events, and unknown or mixed namespaces
+fail closed.
 
 ## Registry and routing
 
@@ -80,6 +89,7 @@ when a request opens (approval) or user input is requested, via
 [claude]: ../../apps/server/src/provider/Drivers/ClaudeDriver.ts
 [cursor]: ../../apps/server/src/provider/Drivers/CursorDriver.ts
 [grok]: ../../apps/server/src/provider/Drivers/GrokDriver.ts
+[kimi]: ../../apps/server/src/provider/Drivers/KimiDriver.ts
 [opencode]: ../../apps/server/src/provider/Drivers/OpenCodeDriver.ts
 [adapter]: ../../apps/server/src/provider/Services/ProviderAdapter.ts
 [instances]: ../../apps/server/src/provider/Services/ProviderInstanceRegistry.ts

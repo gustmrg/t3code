@@ -33,7 +33,53 @@ const CODEX_CAPABILITIES: ModelCapabilities = {
   ],
 };
 
+const KIMI_CAPABILITIES: ModelCapabilities = {
+  optionDescriptors: [
+    {
+      id: "thinking",
+      label: "Thinking",
+      type: "select",
+      options: [
+        { id: "off", label: "Thinking Off" },
+        { id: "low", label: "Thinking Low" },
+        { id: "high", label: "Thinking High", isDefault: true },
+        { id: "max", label: "Thinking Max" },
+      ],
+      currentValue: "high",
+    },
+  ],
+};
+
 describe("mobile provider options", () => {
+  it("keeps the Kimi driver slug alongside negotiated options", () => {
+    const snapshot = {
+      driver: "kimi",
+      models: [{ slug: "kimi-k2.5", capabilities: KIMI_CAPABILITIES }],
+    };
+    expect(snapshot.driver).toBe("kimi");
+    expect(
+      resolveProviderOptionDescriptors({
+        capabilities: snapshot.models[0]!.capabilities,
+        selections: undefined,
+      }),
+    ).toEqual([expect.objectContaining({ id: "thinking", currentValue: "high" })]);
+  });
+
+  it("updates Kimi thinking from its negotiated effort choices", () => {
+    const descriptors = resolveProviderOptionDescriptors({
+      capabilities: KIMI_CAPABILITIES,
+      selections: undefined,
+    });
+
+    expect(providerOptionValueLabels(descriptors)).toEqual(["Thinking High"]);
+    expect(applyProviderOptionSelection(descriptors, { id: "thinking", value: "off" })).toEqual([
+      { id: "thinking", value: "off" },
+    ]);
+    expect(
+      applyProviderOptionSelection(descriptors, { id: "thinking", value: "ultra" }),
+    ).toBeNull();
+  });
+
   it("summarizes the option values currently in effect", () => {
     const descriptors = resolveProviderOptionDescriptors({
       capabilities: CODEX_CAPABILITIES,

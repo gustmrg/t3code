@@ -104,6 +104,29 @@ describe("ClientSettings sidebar", () => {
 });
 
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
+  it("decodes Kimi Code defaults and custom settings", () => {
+    expect(decodeServerSettings({}).providers.kimi).toEqual({
+      enabled: true,
+      binaryPath: "kimi",
+      customModels: [],
+    });
+
+    expect(
+      decodeServerSettings({
+        providers: {
+          kimi: {
+            binaryPath: "/opt/kimi/bin/kimi",
+            customModels: ["kimi-k2.5"],
+          },
+        },
+      }).providers.kimi,
+    ).toEqual({
+      enabled: true,
+      binaryPath: "/opt/kimi/bin/kimi",
+      customModels: ["kimi-k2.5"],
+    });
+  });
+
   it("defaults text generation to Luna at low reasoning effort", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
       instanceId: ProviderInstanceId.make("codex"),
@@ -207,6 +230,24 @@ describe("ServerSettings.sourceControlWritingStyle", () => {
 });
 
 describe("ServerSettingsPatch.providerInstances", () => {
+  it("decodes a Kimi Code provider patch", () => {
+    expect(
+      decodeServerSettingsPatch({
+        providers: {
+          kimi: {
+            enabled: false,
+            binaryPath: " /custom/kimi ",
+            customModels: ["custom-kimi"],
+          },
+        },
+      }).providers?.kimi,
+    ).toEqual({
+      enabled: false,
+      binaryPath: "/custom/kimi",
+      customModels: ["custom-kimi"],
+    });
+  });
+
   it("treats providerInstances as an optional whole-map replacement", () => {
     const patch = decodeServerSettingsPatch({});
     expect(patch.providerInstances).toBeUndefined();

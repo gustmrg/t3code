@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind } from "@t3tools/contracts";
 
 import { DRIVER_OPTION_BY_VALUE } from "./providerDriverMeta";
+import { KimiIcon } from "../Icons";
 import {
   deriveProviderSettingsFields,
   nextProviderConfigWithFieldValue,
@@ -10,6 +11,17 @@ import {
 } from "./ProviderSettingsForm";
 
 describe("ProviderSettingsForm helpers", () => {
+  it("exposes Kimi Code once with its generated binary field and Early Access metadata", () => {
+    const kimi = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("kimi")];
+    expect(kimi).toBeDefined();
+    expect(kimi).toMatchObject({
+      label: "Kimi Code",
+      badgeLabel: "Early Access",
+      icon: KimiIcon,
+    });
+    expect(deriveProviderSettingsFields(kimi!).map((field) => field.key)).toEqual(["binaryPath"]);
+  });
+
   it("derives visible provider config fields from the client definition schema", () => {
     const codex = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("codex")];
 

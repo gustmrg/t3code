@@ -43,6 +43,7 @@
  */
 import {
   defaultInstanceIdForDriver,
+  ProviderDriverKind,
   type ProviderInstanceConfig,
   type ProviderInstanceConfigMap,
   ServerSettings,
@@ -75,27 +76,30 @@ export const deriveProviderInstanceConfigMap = (
 ): ProviderInstanceConfigMap => {
   const merged: Record<string, ProviderInstanceConfig> = { ...settings.providerInstances };
 
-  for (const driver of BUILT_IN_DRIVERS) {
-    const instanceId = defaultInstanceIdForDriver(driver.driverKind);
+  for (const legacyKey of Object.keys(settings.providers) as Array<
+    keyof ServerSettings["providers"]
+  >) {
+    const driverKind =
+      BUILT_IN_DRIVERS.find((driver) => driver.driverKind === legacyKey)?.driverKind ??
+      ProviderDriverKind.make(legacyKey);
+    const instanceId = defaultInstanceIdForDriver(driverKind);
     if (instanceId in merged) {
       // Explicit `providerInstances` entry for this slot — user-authored
       // config always wins over the legacy mirror.
       continue;
     }
 
-    // Only built-in drivers have a legacy mirror; the registry's
-    // `providers` struct is keyed on the same literal slug as
-    // `driverKind`. Access is dynamic (the driver kind is a branded string),
-    // but it's constrained to `keyof settings.providers` by the union of
-    // built-in driver kinds.
-    const legacyKey = driver.driverKind as keyof ServerSettings["providers"];
+    // Every legacy provider key is also its driver slug. Iterating the mirror
+    // directly lets a newly added settings schema hydrate before its driver is
+    // registered; until registration, the registry preserves it as an
+    // unavailable shadow rather than dropping configuration.
     const legacyConfig = settings.providers[legacyKey];
     if (legacyConfig === undefined) {
       continue;
     }
 
     merged[instanceId] = {
-      driver: driver.driverKind,
+      driver: driverKind,
       config: legacyConfig,
     };
   }

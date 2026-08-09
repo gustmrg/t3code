@@ -96,6 +96,50 @@ describe("mobile model options", () => {
     expect(option?.selection.options).toEqual([{ id: "serviceTier", value: "default" }]);
   });
 
+  it("initializes Kimi models with their negotiated thinking effort", () => {
+    const config = {
+      providers: [
+        {
+          instanceId: "kimi",
+          driver: "kimi",
+          displayName: "Kimi Code",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          models: [
+            {
+              slug: "kimi-k2.5",
+              name: "Kimi K2.5",
+              isCustom: false,
+              capabilities: {
+                optionDescriptors: [
+                  {
+                    id: "thinking",
+                    label: "Thinking",
+                    type: "select",
+                    options: [
+                      { id: "off", label: "Thinking Off" },
+                      { id: "high", label: "Thinking High", isDefault: true },
+                      { id: "max", label: "Thinking Max" },
+                    ],
+                    currentValue: "high",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    } as unknown as ServerConfig;
+
+    const [option] = buildModelOptions(config, null);
+    expect(option?.selection).toEqual({
+      instanceId: "kimi",
+      model: "kimi-k2.5",
+      options: [{ id: "thinking", value: "high" }],
+    });
+  });
+
   it("rejects stored selections whose provider is not usable", () => {
     const config = {
       providers: [

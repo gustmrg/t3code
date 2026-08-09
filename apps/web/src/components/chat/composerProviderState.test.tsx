@@ -17,6 +17,7 @@ import {
 // vary only the descriptor shape per scenario.
 
 const PROVIDER: ProviderDriverKind = ProviderDriverKind.make("codex");
+const KIMI: ProviderDriverKind = ProviderDriverKind.make("kimi");
 const MODEL = "test-model";
 
 function selectDescriptor(
@@ -87,6 +88,34 @@ describe("getComposerProviderState", () => {
       promptEffort: "high",
       modelOptionsForDispatch: selections(["effort", "high"]),
     });
+  });
+
+  it("dispatches Kimi's default and selected thinking efforts", () => {
+    const models = modelWith([
+      selectDescriptor("thinking", [
+        { id: "off", label: "Thinking Off" },
+        { id: "low", label: "Thinking Low" },
+        { id: "high", label: "Thinking High", isDefault: true },
+        { id: "max", label: "Thinking Max" },
+      ]),
+    ]);
+
+    expect(
+      getComposerProviderState({
+        provider: KIMI,
+        model: MODEL,
+        models,
+        modelOptions: undefined,
+      }).modelOptionsForDispatch,
+    ).toEqual(selections(["thinking", "high"]));
+    expect(
+      getComposerProviderState({
+        provider: KIMI,
+        model: MODEL,
+        models,
+        modelOptions: selections(["thinking", "off"]),
+      }).modelOptionsForDispatch,
+    ).toEqual(selections(["thinking", "off"]));
   });
 
   it("lets selections override defaults and propagates them through dispatch", () => {

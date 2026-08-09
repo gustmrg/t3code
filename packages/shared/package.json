@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./brandAssets": {
+      "types": "./src/brandAssets.ts",
+      "import": "./src/brandAssets.ts"
+    },
     "./projectFavicon": {
       "types": "./src/projectFavicon.ts",
       "import": "./src/projectFavicon.ts"
