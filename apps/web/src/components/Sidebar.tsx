@@ -377,6 +377,7 @@ function SnoozePopoverButton(props: {
           <button
             type="button"
             aria-label="Snooze thread"
+            title="Snooze thread until later"
             onClick={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}
             className="inline-flex h-full cursor-pointer items-center gap-0.5 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
@@ -971,6 +972,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   <button
                     type="button"
                     aria-label="Wake thread now"
+                    title="Wake thread now"
                     onClick={handleUnsnoozeClick}
                     className={cn(
                       "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
@@ -984,6 +986,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 <button
                   type="button"
                   aria-label="Un-settle thread"
+                  title="Move thread back to active"
                   onClick={handleUnsettleClick}
                   className={cn(
                     "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
@@ -996,6 +999,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 <button
                   type="button"
                   aria-label="Settle thread"
+                  title="Move thread to Settled"
                   onClick={handleSettleClick}
                   className={cn(
                     "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
@@ -1172,6 +1176,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       <button
                         type="button"
                         aria-label="Settle thread"
+                        title="Move thread to Settled"
                         onClick={handleSettleClick}
                         className="-mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
                       >
