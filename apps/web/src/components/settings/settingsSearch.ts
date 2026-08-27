@@ -142,6 +142,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "default-thread-view",
+    title: "Default new thread view",
+    to: "/settings/general",
+  },
+  {
+    id: "terminal-startup",
+    title: "Open terminal with",
+    to: "/settings/general",
+  },
+  {
     id: "new-threads",
     title: "New threads",
     to: "/settings/general",

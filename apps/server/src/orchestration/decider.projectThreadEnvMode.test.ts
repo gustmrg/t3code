@@ -101,3 +101,56 @@ it.layer(NodeServices.layer)("decider project defaultThreadEnvMode", (it) => {
     }),
   );
 });
+
+it.layer(NodeServices.layer)("decider project threadLaunchPreference", (it) => {
+  it.effect("sets, preserves, and clears the project override", () =>
+    Effect.gen(function* () {
+      const readModel = yield* projectEvent(createEmptyReadModel(now), seedProjectCreated(1));
+      expect(readModel.projects[0]?.threadLaunchPreference).toBeNull();
+
+      const set = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.meta.update",
+          commandId: CommandId.make("cmd-project-launch-set"),
+          projectId,
+          threadLaunchPreference: {
+            defaultThreadView: "terminal",
+            terminalStartup: { _tag: "shell" },
+          },
+        },
+        readModel,
+      });
+      const setEvent = Array.isArray(set) ? set[0] : set;
+      const afterSet = yield* projectEvent(readModel, { ...setEvent, sequence: 2 });
+      expect(afterSet.projects[0]?.threadLaunchPreference).toEqual({
+        defaultThreadView: "terminal",
+        terminalStartup: { _tag: "shell" },
+      });
+
+      const unrelated = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.meta.update",
+          commandId: CommandId.make("cmd-project-launch-title"),
+          projectId,
+          title: "Still terminal",
+        },
+        readModel: afterSet,
+      });
+      const unrelatedEvent = Array.isArray(unrelated) ? unrelated[0] : unrelated;
+      expect("threadLaunchPreference" in (unrelatedEvent.payload as object)).toBe(false);
+
+      const clear = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.meta.update",
+          commandId: CommandId.make("cmd-project-launch-clear"),
+          projectId,
+          threadLaunchPreference: null,
+        },
+        readModel: afterSet,
+      });
+      const clearEvent = Array.isArray(clear) ? clear[0] : clear;
+      const afterClear = yield* projectEvent(afterSet, { ...clearEvent, sequence: 3 });
+      expect(afterClear.projects[0]?.threadLaunchPreference).toBeNull();
+    }),
+  );
+});

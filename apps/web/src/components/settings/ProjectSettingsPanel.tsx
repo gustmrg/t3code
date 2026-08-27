@@ -15,6 +15,7 @@ import {
 import type {
   ContextMenuItem,
   ModelSelection,
+  ProjectThreadLaunchPreference,
   ProviderDriverKind,
   SidebarProjectGroupingMode,
   T3ProjectFileScript,
@@ -114,6 +115,12 @@ import {
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
 import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import {
+  selectableTerminalStartupProviders,
+  terminalStartupFromSelection,
+  terminalStartupSelectionValue,
+  unavailableTerminalStartupProviderId,
+} from "./threadLaunchSettings";
 
 export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
   repository: "Group by repository",
@@ -364,6 +371,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         title: string;
         defaultModelSelection: ModelSelection | null;
         defaultThreadEnvMode: ThreadEnvMode | null;
+        threadLaunchPreference: ProjectThreadLaunchPreference | null;
         faviconPath: string | null;
       }>,
       failureTitle: string,
@@ -447,6 +455,28 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
       ),
     [updateAllMembers],
   );
+
+  // ----- new-thread view and terminal startup -----
+  const storedThreadLaunchPreference = representative.threadLaunchPreference ?? null;
+  const setThreadLaunchPreference = useCallback(
+    (preference: ProjectThreadLaunchPreference | null) =>
+      void updateAllMembers(
+        { threadLaunchPreference: preference },
+        "Failed to update new-thread view",
+      ),
+    [updateAllMembers],
+  );
+  const effectiveThreadView =
+    storedThreadLaunchPreference?.defaultThreadView ?? settings.defaultThreadView;
+  const effectiveTerminalStartup =
+    storedThreadLaunchPreference?.terminalStartup ?? settings.terminalStartup;
+  const terminalStartupProviderEntries = selectableTerminalStartupProviders(instanceEntries);
+  const staleTerminalStartupProviderId = unavailableTerminalStartupProviderId(
+    effectiveTerminalStartup,
+    terminalStartupProviderEntries,
+  );
+  const effectiveTerminalStartupProviderId =
+    effectiveTerminalStartup._tag === "agent" ? effectiveTerminalStartup.providerInstanceId : null;
 
   // ----- favicon -----
   const [faviconPickerOpen, setFaviconPickerOpen] = useState(false);
@@ -879,6 +909,148 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               )
             }
           />
+          <SettingsRow
+            title="Default view"
+            description="Choose how new threads in this project open. Applies to every checkout in this group."
+            resetAction={
+              storedThreadLaunchPreference !== null ? (
+                <SettingResetButton
+                  label="project default new thread view"
+                  onClick={() => setThreadLaunchPreference(null)}
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={storedThreadLaunchPreference?.defaultThreadView ?? "inherit"}
+                onValueChange={(value) => {
+                  if (value === "inherit") {
+                    setThreadLaunchPreference(null);
+                  } else if (value === "chat" || value === "terminal") {
+                    setThreadLaunchPreference({
+                      ...storedThreadLaunchPreference,
+                      defaultThreadView: value,
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger aria-label="Project default new thread view">
+                  <SelectValue>
+                    {storedThreadLaunchPreference === null
+                      ? `Use application default (${settings.defaultThreadView === "terminal" ? "Terminal" : "Chat"})`
+                      : storedThreadLaunchPreference.defaultThreadView === "terminal"
+                        ? "Terminal"
+                        : "Chat"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="inherit">
+                    Use application default
+                  </SelectItem>
+                  <SelectItem hideIndicator value="chat">
+                    Chat
+                  </SelectItem>
+                  <SelectItem hideIndicator value="terminal">
+                    Terminal
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+          {effectiveThreadView === "terminal" ? (
+            <SettingsRow
+              title="Open terminal with"
+              description={
+                staleTerminalStartupProviderId
+                  ? `The configured provider “${staleTerminalStartupProviderId}” is unavailable. New terminals will use a shell until this setting is changed.`
+                  : "Inherit the application setting, open a shell, or start a configured provider CLI."
+              }
+              resetAction={
+                storedThreadLaunchPreference?.terminalStartup !== undefined ? (
+                  <SettingResetButton
+                    label="project terminal startup"
+                    onClick={() =>
+                      setThreadLaunchPreference({
+                        defaultThreadView: storedThreadLaunchPreference.defaultThreadView,
+                      })
+                    }
+                  />
+                ) : null
+              }
+              control={
+                <Select
+                  value={
+                    storedThreadLaunchPreference?.terminalStartup
+                      ? terminalStartupSelectionValue(storedThreadLaunchPreference.terminalStartup)
+                      : "inherit"
+                  }
+                  onValueChange={(value) => {
+                    if (value === "inherit") {
+                      if (!storedThreadLaunchPreference) return;
+                      setThreadLaunchPreference({
+                        defaultThreadView: storedThreadLaunchPreference.defaultThreadView,
+                      });
+                      return;
+                    }
+                    const terminalStartup = terminalStartupFromSelection(String(value));
+                    if (terminalStartup) {
+                      setThreadLaunchPreference({
+                        ...storedThreadLaunchPreference,
+                        defaultThreadView:
+                          storedThreadLaunchPreference?.defaultThreadView ?? "terminal",
+                        terminalStartup,
+                      });
+                    }
+                  }}
+                >
+                  <SelectTrigger aria-label="Project terminal startup">
+                    <SelectValue>
+                      {storedThreadLaunchPreference?.terminalStartup === undefined
+                        ? "Use application default"
+                        : effectiveTerminalStartupProviderId === null
+                          ? "Shell"
+                          : (terminalStartupProviderEntries.find(
+                              (entry) => entry.instanceId === effectiveTerminalStartupProviderId,
+                            )?.displayName ??
+                            `Unavailable (${effectiveTerminalStartupProviderId})`)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem hideIndicator value="inherit">
+                      Use application default
+                    </SelectItem>
+                    <SelectItem hideIndicator value="shell">
+                      Shell
+                    </SelectItem>
+                    {staleTerminalStartupProviderId &&
+                    storedThreadLaunchPreference?.terminalStartup?._tag === "agent" ? (
+                      <SelectItem
+                        disabled
+                        hideIndicator
+                        value={terminalStartupSelectionValue(
+                          storedThreadLaunchPreference.terminalStartup,
+                        )}
+                      >
+                        Unavailable ({staleTerminalStartupProviderId})
+                      </SelectItem>
+                    ) : null}
+                    {terminalStartupProviderEntries.map((entry) => (
+                      <SelectItem
+                        hideIndicator
+                        key={entry.instanceId}
+                        value={terminalStartupSelectionValue({
+                          _tag: "agent",
+                          providerInstanceId: entry.instanceId,
+                        })}
+                      >
+                        {entry.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              }
+            />
+          ) : null}
           <SettingsRow
             title="Workspace"
             description="Where new threads in this project start. Overrides t3.json and the global default; applies to every checkout in this group."

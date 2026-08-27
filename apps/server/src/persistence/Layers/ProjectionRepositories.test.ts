@@ -34,6 +34,13 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
           model: "gpt-5.4",
         },
         defaultThreadEnvMode: null,
+        threadLaunchPreference: {
+          defaultThreadView: "terminal",
+          terminalStartup: {
+            _tag: "agent",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+          },
+        },
         scripts: [],
         createdAt: "2026-03-24T00:00:00.000Z",
         updatedAt: "2026-03-24T00:00:00.000Z",
@@ -67,6 +74,13 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
       assert.deepStrictEqual(Option.getOrNull(persisted)?.defaultModelSelection, {
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5.4",
+      });
+      assert.deepStrictEqual(Option.getOrNull(persisted)?.threadLaunchPreference, {
+        defaultThreadView: "terminal",
+        terminalStartup: {
+          _tag: "agent",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        },
       });
     }),
   );

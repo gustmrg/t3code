@@ -66,6 +66,32 @@ describe("ClientSettings word wrap", () => {
   });
 });
 
+describe("ServerSettings terminal-first preferences", () => {
+  it("defaults older settings to Chat and Shell", () => {
+    const settings = decodeServerSettings({});
+    expect(settings.defaultThreadView).toBe("chat");
+    expect(settings.terminalStartup).toEqual({ _tag: "shell" });
+  });
+
+  it("decodes and patches a configured provider instance startup", () => {
+    const terminalStartup = {
+      _tag: "agent" as const,
+      providerInstanceId: ProviderInstanceId.make("codex_personal"),
+    };
+    expect(
+      decodeServerSettings({ defaultThreadView: "terminal", terminalStartup }).terminalStartup,
+    ).toEqual(terminalStartup);
+    expect(decodeServerSettingsPatch({ terminalStartup }).terminalStartup).toEqual(terminalStartup);
+  });
+
+  it("rejects invalid views and arbitrary startup commands", () => {
+    expect(() => decodeServerSettingsPatch({ defaultThreadView: "diff" })).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({ terminalStartup: { _tag: "command", command: "codex" } }),
+    ).toThrow();
+  });
+});
+
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
     expect(decodeClientSettings({}).glassOpacity).toBe(80);

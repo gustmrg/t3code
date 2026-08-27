@@ -43,6 +43,10 @@
       "types": "./src/providerSkills.ts",
       "default": "./src/providerSkills.ts"
     },
+    "./thread-launch-preference": {
+      "types": "./src/threadLaunchPreference.ts",
+      "default": "./src/threadLaunchPreference.ts"
+    },
     "./relay": {
       "types": "./src/relay/index.ts",
       "default": "./src/relay/index.ts"

@@ -77,6 +77,12 @@ import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
+import {
+  selectableTerminalStartupProviders,
+  terminalStartupFromSelection,
+  terminalStartupSelectionValue,
+  unavailableTerminalStartupProviderId,
+} from "./threadLaunchSettings";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
 import { primaryServerObservabilityAtom, primaryServerProvidersAtom } from "../../state/server";
@@ -522,6 +528,12 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
         ? ["New thread mode"]
         : []),
+      ...(settings.defaultThreadView !== DEFAULT_UNIFIED_SETTINGS.defaultThreadView
+        ? ["Default new thread view"]
+        : []),
+      ...(!Equal.equals(settings.terminalStartup, DEFAULT_UNIFIED_SETTINGS.terminalStartup)
+        ? ["Terminal startup"]
+        : []),
       ...(settings.newWorktreesStartFromOrigin !==
       DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin
         ? ["New worktrees start from origin"]
@@ -558,6 +570,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
+      settings.defaultThreadView,
+      settings.terminalStartup,
       settings.newWorktreesStartFromOrigin,
       settings.diffIgnoreWhitespace,
       settings.environmentIdentificationMode,
@@ -666,6 +680,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
       providerHealthRefreshInterval: DEFAULT_UNIFIED_SETTINGS.providerHealthRefreshInterval,
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
+      defaultThreadView: DEFAULT_UNIFIED_SETTINGS.defaultThreadView,
+      terminalStartup: DEFAULT_UNIFIED_SETTINGS.terminalStartup,
       newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
       addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
@@ -1877,6 +1893,15 @@ export function GeneralSettingsPanel() {
   const textGenerationModelInstanceEntries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings),
   );
+  const terminalStartupProviderEntries = selectableTerminalStartupProviders(
+    textGenerationModelInstanceEntries,
+  );
+  const staleTerminalStartupProviderId = unavailableTerminalStartupProviderId(
+    settings.terminalStartup,
+    terminalStartupProviderEntries,
+  );
+  const terminalStartupProviderId =
+    settings.terminalStartup._tag === "agent" ? settings.terminalStartup.providerInstanceId : null;
   const textGenInstanceEntry = textGenerationModelInstanceEntries.find(
     (entry) => entry.instanceId === textGenInstanceId,
   );
@@ -1909,6 +1934,112 @@ export function GeneralSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection title="General">
+        <SettingsRow
+          {...searchableSetting("default-thread-view")}
+          description="Choose whether new threads start in structured chat or the terminal workspace."
+          resetAction={
+            settings.defaultThreadView !== DEFAULT_UNIFIED_SETTINGS.defaultThreadView ? (
+              <SettingResetButton
+                label="default new thread view"
+                onClick={() =>
+                  updateSettings({ defaultThreadView: DEFAULT_UNIFIED_SETTINGS.defaultThreadView })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.defaultThreadView}
+              onValueChange={(value) => {
+                if (value === "chat" || value === "terminal") {
+                  updateSettings({ defaultThreadView: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-44" aria-label="Default new thread view">
+                <SelectValue>
+                  {settings.defaultThreadView === "terminal" ? "Terminal" : "Chat"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="chat">
+                  Chat
+                </SelectItem>
+                <SelectItem hideIndicator value="terminal">
+                  Terminal
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("terminal-startup")}
+          description={
+            staleTerminalStartupProviderId
+              ? `The configured provider “${staleTerminalStartupProviderId}” is unavailable. Terminal threads will fall back to a shell until you choose another option.`
+              : "Choose a shell or a configured provider CLI for terminal-first threads. Agent launch failures fall back to the shell."
+          }
+          resetAction={
+            !Equal.equals(settings.terminalStartup, DEFAULT_UNIFIED_SETTINGS.terminalStartup) ? (
+              <SettingResetButton
+                label="terminal startup"
+                onClick={() =>
+                  updateSettings({ terminalStartup: DEFAULT_UNIFIED_SETTINGS.terminalStartup })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={terminalStartupSelectionValue(settings.terminalStartup)}
+              onValueChange={(value) => {
+                const terminalStartup = terminalStartupFromSelection(String(value));
+                if (terminalStartup) updateSettings({ terminalStartup });
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-56" aria-label="Open terminal with">
+                <SelectValue>
+                  {terminalStartupProviderId === null
+                    ? "Shell"
+                    : (terminalStartupProviderEntries.find(
+                        (entry) => entry.instanceId === terminalStartupProviderId,
+                      )?.displayName ?? `Unavailable (${terminalStartupProviderId})`)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="shell">
+                  Shell
+                </SelectItem>
+                {staleTerminalStartupProviderId ? (
+                  <SelectItem
+                    disabled
+                    hideIndicator
+                    value={terminalStartupSelectionValue({
+                      _tag: "agent",
+                      providerInstanceId: staleTerminalStartupProviderId,
+                    })}
+                  >
+                    Unavailable ({staleTerminalStartupProviderId})
+                  </SelectItem>
+                ) : null}
+                {terminalStartupProviderEntries.map((entry) => (
+                  <SelectItem
+                    hideIndicator
+                    key={entry.instanceId}
+                    value={terminalStartupSelectionValue({
+                      _tag: "agent",
+                      providerInstanceId: entry.instanceId,
+                    })}
+                  >
+                    {entry.displayName}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+
         <SettingsRow
           {...searchableSetting("project-grouping")}
           description="Combine matching repositories across environments."

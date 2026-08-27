@@ -23,6 +23,12 @@ import {
   ProviderInstanceId,
   type ProviderDriverKind,
 } from "./providerInstance.ts";
+import {
+  DEFAULT_TERMINAL_STARTUP,
+  DEFAULT_THREAD_VIEW,
+  DefaultThreadView,
+  TerminalStartup,
+} from "./threadLaunch.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -655,6 +661,12 @@ export const ServerSettings = Schema.Struct({
   defaultThreadEnvMode: ThreadEnvMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("local" as const satisfies ThreadEnvMode)),
   ),
+  defaultThreadView: DefaultThreadView.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_THREAD_VIEW)),
+  ),
+  terminalStartup: TerminalStartup.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_TERMINAL_STARTUP)),
+  ),
   newWorktreesStartFromOrigin: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
@@ -862,6 +874,8 @@ export const ServerSettingsPatch = Schema.Struct({
   providerHealthRefreshInterval: Schema.optionalKey(Schema.DurationFromMillis),
   backgroundActivityProfile: Schema.optionalKey(BackgroundActivityProfile),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
+  defaultThreadView: Schema.optionalKey(DefaultThreadView),
+  terminalStartup: Schema.optionalKey(TerminalStartup),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
