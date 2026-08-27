@@ -7,6 +7,7 @@ import {
   pullRequestSurfaceId,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
+  selectRightPanelMaximized,
   selectSelectedRightPanelSurface,
   selectThreadRightPanelState,
   updatePullRequestTabStatus,
@@ -15,9 +16,14 @@ import {
 
 const refA = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-A"));
 const refB = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-B"));
+const refAOtherEnvironment = scopeThreadRef("env-2" as EnvironmentId, ThreadId.make("thread-A"));
 
 beforeEach(() => {
-  useRightPanelStore.setState({ byThreadKey: {} });
+  useRightPanelStore.setState({
+    byThreadKey: {},
+    panelFirstByThreadKey: {},
+    manuallyMaximizedByThreadKey: {},
+  });
 });
 
 describe("rightPanelStore", () => {
@@ -42,6 +48,7 @@ describe("rightPanelStore", () => {
           surfaces: [{ id: "browser:tab-a", kind: "preview", resourceId: "tab-a" }],
         },
       },
+      panelFirstByThreadKey: {},
     });
   });
 
@@ -72,6 +79,7 @@ describe("rightPanelStore", () => {
           ],
         },
       },
+      panelFirstByThreadKey: {},
     });
   });
 
@@ -102,6 +110,7 @@ describe("rightPanelStore", () => {
           ],
         },
       },
+      panelFirstByThreadKey: {},
     });
   });
 
@@ -145,6 +154,7 @@ describe("rightPanelStore", () => {
           ],
         },
       },
+      panelFirstByThreadKey: {},
     });
   });
 
@@ -174,7 +184,10 @@ describe("rightPanelStore", () => {
           "env-1:thread-A": panelState,
         },
       }),
-    ).toEqual({ byThreadKey: { "env-1:thread-A": panelState } });
+    ).toEqual({
+      byThreadKey: { "env-1:thread-A": panelState },
+      panelFirstByThreadKey: {},
+    });
   });
 
   it("drops persisted plan surfaces and does not reopen an empty panel", () => {
@@ -209,6 +222,23 @@ describe("rightPanelStore", () => {
           surfaces: [{ id: "diff", kind: "diff" }],
         },
       },
+      panelFirstByThreadKey: {},
+    });
+  });
+
+  it("migrates only valid scoped panel-first preferences", () => {
+    expect(
+      migratePersistedRightPanelState({
+        panelFirstByThreadKey: {
+          "env-1:thread-A": true,
+          "env-1:thread-B": false,
+          "env-1:thread-C": "yes",
+          "env-1:pull-requests-panel": true,
+        },
+      }),
+    ).toEqual({
+      byThreadKey: {},
+      panelFirstByThreadKey: { "env-1:thread-A": true },
     });
   });
 
@@ -383,8 +413,127 @@ describe("rightPanelStore", () => {
 
   it("removeThread clears persisted state", () => {
     useRightPanelStore.getState().open(refA, "agents");
+    useRightPanelStore.getState().setPanelFirst(refA, true);
     useRightPanelStore.getState().removeThread(refA);
     expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
+    expect(
+      selectRightPanelMaximized(
+        useRightPanelStore.getState().panelFirstByThreadKey,
+        useRightPanelStore.getState().manuallyMaximizedByThreadKey,
+        refA,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps durable panel-first layout separate from temporary manual maximization", () => {
+    useRightPanelStore.getState().setPanelFirst(refA, true);
+    useRightPanelStore.getState().toggleMaximized(refB);
+
+    const state = useRightPanelStore.getState();
+    expect(state.panelFirstByThreadKey).toEqual({ "env-1:thread-A": true });
+    expect(state.manuallyMaximizedByThreadKey).toEqual({ "env-1:thread-B": true });
+    expect(
+      selectRightPanelMaximized(
+        state.panelFirstByThreadKey,
+        state.manuallyMaximizedByThreadKey,
+        refA,
+      ),
+    ).toBe(true);
+    expect(
+      selectRightPanelMaximized(
+        state.panelFirstByThreadKey,
+        state.manuallyMaximizedByThreadKey,
+        refB,
+      ),
+    ).toBe(true);
+  });
+
+  it("restores a durable panel-first thread to the split layout", () => {
+    useRightPanelStore.getState().setPanelFirst(refA, true);
+    useRightPanelStore.getState().toggleMaximized(refA);
+
+    const state = useRightPanelStore.getState();
+    expect(state.panelFirstByThreadKey).toEqual({});
+    expect(state.manuallyMaximizedByThreadKey).toEqual({});
+  });
+
+  it("keeps panel-first presentation while switching workspace surfaces", () => {
+    useRightPanelStore.getState().setPanelFirst(refA, true);
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().open(refA, "diff");
+
+    const state = useRightPanelStore.getState();
+    expect(
+      selectRightPanelMaximized(
+        state.panelFirstByThreadKey,
+        state.manuallyMaximizedByThreadKey,
+        refA,
+      ),
+    ).toBe(true);
+    expect(selectThreadRightPanelState(state.byThreadKey, refA)).toMatchObject({
+      isOpen: true,
+      activeSurfaceId: "diff",
+      surfaces: [
+        { id: "terminal:term-1", kind: "terminal" },
+        { id: "diff", kind: "diff" },
+      ],
+    });
+  });
+
+  it("scopes panel presentation by environment", () => {
+    useRightPanelStore.getState().setPanelFirst(refA, true);
+
+    const state = useRightPanelStore.getState();
+    expect(
+      selectRightPanelMaximized(
+        state.panelFirstByThreadKey,
+        state.manuallyMaximizedByThreadKey,
+        refAOtherEnvironment,
+      ),
+    ).toBe(false);
+  });
+
+  it("does not persist temporary manual maximization", () => {
+    useRightPanelStore.getState().setPanelFirst(refA, true);
+    useRightPanelStore.getState().toggleMaximized(refB);
+
+    const partial = useRightPanelStore.persist
+      .getOptions()
+      .partialize?.(useRightPanelStore.getState());
+    expect(partial).toMatchObject({ panelFirstByThreadKey: { "env-1:thread-A": true } });
+    expect(partial).not.toHaveProperty("manuallyMaximizedByThreadKey");
+  });
+
+  it("manual maximization is cleared when the panel closes", () => {
+    useRightPanelStore.getState().open(refA, "diff");
+    useRightPanelStore.getState().toggleMaximized(refA);
+    useRightPanelStore.getState().close(refA);
+    useRightPanelStore.getState().show(refA);
+
+    const state = useRightPanelStore.getState();
+    expect(
+      selectRightPanelMaximized(
+        state.panelFirstByThreadKey,
+        state.manuallyMaximizedByThreadKey,
+        refA,
+      ),
+    ).toBe(false);
+  });
+
+  it("manual maximization is cleared when the last surface closes", () => {
+    useRightPanelStore.getState().open(refA, "diff");
+    useRightPanelStore.getState().toggleMaximized(refA);
+    useRightPanelStore.getState().closeSurface(refA, "diff");
+    useRightPanelStore.getState().open(refA, "files");
+
+    const state = useRightPanelStore.getState();
+    expect(
+      selectRightPanelMaximized(
+        state.panelFirstByThreadKey,
+        state.manuallyMaximizedByThreadKey,
+        refA,
+      ),
+    ).toBe(false);
   });
 
   it("close on never-opened thread is a no-op", () => {

@@ -68,7 +68,8 @@ const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v9 removed the "plan" surface kind (plans render inline in the transcript).
 // v10 keys pull-request surfaces by reference instead of a singleton tab.
 // v11 stops persisting the pull-request list's shared panel, so a restart opens the page fresh.
-const RIGHT_PANEL_STORAGE_VERSION = 11;
+// v12 persists the durable panel-first layout separately from temporary manual maximization.
+const RIGHT_PANEL_STORAGE_VERSION = 12;
 
 /**
  * The pull-request list's shared panel (see PULL_REQUESTS_PANEL_ID in the route) is session
@@ -84,6 +85,8 @@ export interface ThreadRightPanelState {
 
 interface RightPanelStoreState {
   byThreadKey: Record<string, ThreadRightPanelState>;
+  panelFirstByThreadKey: Record<string, true>;
+  manuallyMaximizedByThreadKey: Record<string, true>;
   open: (
     ref: ScopedThreadRef,
     kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
@@ -117,6 +120,9 @@ interface RightPanelStoreState {
     ref: ScopedThreadRef,
     kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
   ) => void;
+  setPanelFirst: (ref: ScopedThreadRef, panelFirst: boolean) => void;
+  toggleMaximized: (ref: ScopedThreadRef) => void;
+  restoreSplit: (ref: ScopedThreadRef) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
 
@@ -240,6 +246,18 @@ const updateThread = (
   return { ...byThreadKey, [threadKey]: next };
 };
 
+const updateThreadAndClearManualMaximizeWhenClosed = (
+  state: Pick<RightPanelStoreState, "byThreadKey" | "manuallyMaximizedByThreadKey">,
+  threadKey: string,
+  updater: (current: ThreadRightPanelState) => ThreadRightPanelState,
+) => {
+  const byThreadKey = updateThread(state.byThreadKey, threadKey, updater);
+  if (byThreadKey[threadKey]?.isOpen) return { byThreadKey };
+  const { [threadKey]: _manual, ...manuallyMaximizedByThreadKey } =
+    state.manuallyMaximizedByThreadKey;
+  return { byThreadKey, manuallyMaximizedByThreadKey };
+};
+
 function normalizeRevealLine(line: number | undefined): number | null {
   if (line === undefined || !Number.isFinite(line)) return null;
   return Math.max(1, Math.trunc(line));
@@ -247,9 +265,10 @@ function normalizeRevealLine(line: number | undefined): number | null {
 
 export function migratePersistedRightPanelState(persistedState: unknown): {
   byThreadKey: Record<string, ThreadRightPanelState>;
+  panelFirstByThreadKey: Record<string, true>;
 } {
   if (!persistedState || typeof persistedState !== "object") {
-    return { byThreadKey: {} };
+    return { byThreadKey: {}, panelFirstByThreadKey: {} };
   }
   const byThreadKey =
     "byThreadKey" in persistedState &&
@@ -357,13 +376,25 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
             }),
         )
       : {};
-  return { byThreadKey };
+  const panelFirstByThreadKey =
+    "panelFirstByThreadKey" in persistedState &&
+    persistedState.panelFirstByThreadKey &&
+    typeof persistedState.panelFirstByThreadKey === "object"
+      ? Object.fromEntries(
+          Object.entries(persistedState.panelFirstByThreadKey).filter(
+            ([threadKey, panelFirst]) => panelFirst === true && !isPullRequestsPanelKey(threadKey),
+          ),
+        )
+      : {};
+  return { byThreadKey, panelFirstByThreadKey };
 }
 
 export const useRightPanelStore = create<RightPanelStoreState>()(
   persist(
     (set) => ({
       byThreadKey: {},
+      panelFirstByThreadKey: {},
+      manuallyMaximizedByThreadKey: {},
       open: (ref, kind) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
@@ -458,8 +489,8 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           })),
         })),
       closeTerminal: (ref, surfaceId, terminalId) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+        set((state) =>
+          updateThreadAndClearManualMaximizeWhenClosed(state, scopedThreadKey(ref), (current) => {
             const surface = current.surfaces.find(
               (entry) => entry.id === surfaceId && entry.kind === "terminal",
             );
@@ -495,7 +526,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               ),
             };
           }),
-        })),
+        ),
       activateSurface: (ref, surfaceId) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
@@ -505,8 +536,8 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           ),
         })),
       closeSurface: (ref, surfaceId) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+        set((state) =>
+          updateThreadAndClearManualMaximizeWhenClosed(state, scopedThreadKey(ref), (current) => {
             const index = current.surfaces.findIndex((surface) => surface.id === surfaceId);
             if (index < 0) return current;
             const surfaces = current.surfaces.filter((surface) => surface.id !== surfaceId);
@@ -521,7 +552,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               activeSurfaceId: fallback?.id ?? null,
             };
           }),
-        })),
+        ),
       closeOtherSurfaces: (ref, surfaceId) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
@@ -552,13 +583,13 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           }),
         })),
       closeAllSurfaces: (ref) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
+        set((state) =>
+          updateThreadAndClearManualMaximizeWhenClosed(state, scopedThreadKey(ref), (current) =>
             current.surfaces.length === 0
               ? current
               : { ...current, isOpen: false, surfaces: [], activeSurfaceId: null },
           ),
-        })),
+        ),
       reconcileBrowserSurfaces: (ref, tabIds) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
@@ -589,8 +620,8 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           }),
         })),
       reconcileFileSurfaces: (ref, workspaceAvailable) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+        set((state) =>
+          updateThreadAndClearManualMaximizeWhenClosed(state, scopedThreadKey(ref), (current) => {
             if (workspaceAvailable) return current;
             const surfaces = current.surfaces.filter(
               (surface) => surface.kind !== "files" && surface.kind !== "file",
@@ -608,7 +639,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 : (surfaces.at(-1)?.id ?? null),
             };
           }),
-        })),
+        ),
       show: (ref) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
@@ -616,40 +647,109 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           ),
         })),
       close: (ref) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
-            current.isOpen ? { ...current, isOpen: false } : current,
-          ),
-        })),
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const { [threadKey]: _manual, ...manuallyMaximizedByThreadKey } =
+            state.manuallyMaximizedByThreadKey;
+          return {
+            byThreadKey: updateThread(state.byThreadKey, threadKey, (current) =>
+              current.isOpen ? { ...current, isOpen: false } : current,
+            ),
+            manuallyMaximizedByThreadKey,
+          };
+        }),
       toggleVisibility: (ref) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => ({
-            ...current,
-            isOpen: !current.isOpen,
-          })),
-        })),
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const current = state.byThreadKey[threadKey] ?? EMPTY_THREAD_STATE;
+          const byThreadKey = updateThread(state.byThreadKey, threadKey, (threadState) => ({
+            ...threadState,
+            isOpen: !threadState.isOpen,
+          }));
+          if (!current.isOpen) return { byThreadKey };
+          const { [threadKey]: _manual, ...manuallyMaximizedByThreadKey } =
+            state.manuallyMaximizedByThreadKey;
+          return { byThreadKey, manuallyMaximizedByThreadKey };
+        }),
       toggle: (ref, kind) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
-            const active = current.surfaces.find(
-              (surface) => surface.id === current.activeSurfaceId,
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const current = state.byThreadKey[threadKey] ?? EMPTY_THREAD_STATE;
+          const active = current.surfaces.find((surface) => surface.id === current.activeSurfaceId);
+          const hidesPanel = current.isOpen && active?.kind === kind;
+          const byThreadKey = updateThread(state.byThreadKey, threadKey, (threadState) => {
+            const activeSurface = threadState.surfaces.find(
+              (surface) => surface.id === threadState.activeSurfaceId,
             );
-            if (current.isOpen && active?.kind === kind) {
-              return { ...current, isOpen: false };
+            if (threadState.isOpen && activeSurface?.kind === kind) {
+              return { ...threadState, isOpen: false };
             }
             if (kind === "preview") {
-              const existing = current.surfaces.find((surface) => surface.kind === "preview");
-              return upsertSurface(current, existing ?? browserSurface(null));
+              const existing = threadState.surfaces.find((surface) => surface.kind === "preview");
+              return upsertSurface(threadState, existing ?? browserSurface(null));
             }
-            return upsertSurface(current, singletonSurface(kind));
-          }),
-        })),
+            return upsertSurface(threadState, singletonSurface(kind));
+          });
+          if (!hidesPanel) return { byThreadKey };
+          const { [threadKey]: _manual, ...manuallyMaximizedByThreadKey } =
+            state.manuallyMaximizedByThreadKey;
+          return { byThreadKey, manuallyMaximizedByThreadKey };
+        }),
+      setPanelFirst: (ref, panelFirst) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const { [threadKey]: _manual, ...manuallyMaximizedByThreadKey } =
+            state.manuallyMaximizedByThreadKey;
+          if (panelFirst) {
+            return {
+              panelFirstByThreadKey: { ...state.panelFirstByThreadKey, [threadKey]: true },
+              manuallyMaximizedByThreadKey,
+            };
+          }
+          const { [threadKey]: _panelFirst, ...panelFirstByThreadKey } =
+            state.panelFirstByThreadKey;
+          return { panelFirstByThreadKey, manuallyMaximizedByThreadKey };
+        }),
+      toggleMaximized: (ref) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          if (state.panelFirstByThreadKey[threadKey]) {
+            const { [threadKey]: _panelFirst, ...panelFirstByThreadKey } =
+              state.panelFirstByThreadKey;
+            const { [threadKey]: _manual, ...manuallyMaximizedByThreadKey } =
+              state.manuallyMaximizedByThreadKey;
+            return { panelFirstByThreadKey, manuallyMaximizedByThreadKey };
+          }
+          if (state.manuallyMaximizedByThreadKey[threadKey]) {
+            const { [threadKey]: _manual, ...manuallyMaximizedByThreadKey } =
+              state.manuallyMaximizedByThreadKey;
+            return { manuallyMaximizedByThreadKey };
+          }
+          return {
+            manuallyMaximizedByThreadKey: {
+              ...state.manuallyMaximizedByThreadKey,
+              [threadKey]: true,
+            },
+          };
+        }),
+      restoreSplit: (ref) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const { [threadKey]: _panelFirst, ...panelFirstByThreadKey } =
+            state.panelFirstByThreadKey;
+          const { [threadKey]: _manual, ...manuallyMaximizedByThreadKey } =
+            state.manuallyMaximizedByThreadKey;
+          return { panelFirstByThreadKey, manuallyMaximizedByThreadKey };
+        }),
       removeThread: (ref) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
-          if (!(threadKey in state.byThreadKey)) return state;
-          const { [threadKey]: _removed, ...rest } = state.byThreadKey;
-          return { byThreadKey: rest };
+          const { [threadKey]: _panel, ...byThreadKey } = state.byThreadKey;
+          const { [threadKey]: _panelFirst, ...panelFirstByThreadKey } =
+            state.panelFirstByThreadKey;
+          const { [threadKey]: _manual, ...manuallyMaximizedByThreadKey } =
+            state.manuallyMaximizedByThreadKey;
+          return { byThreadKey, panelFirstByThreadKey, manuallyMaximizedByThreadKey };
         }),
     }),
     {
@@ -664,11 +764,26 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             ([threadKey]) => !isPullRequestsPanelKey(threadKey),
           ),
         ),
+        panelFirstByThreadKey: Object.fromEntries(
+          Object.entries(state.panelFirstByThreadKey).filter(
+            ([threadKey]) => !isPullRequestsPanelKey(threadKey),
+          ),
+        ),
       }),
       migrate: migratePersistedRightPanelState,
     },
   ),
 );
+
+export function selectRightPanelMaximized(
+  panelFirstByThreadKey: Record<string, true>,
+  manuallyMaximizedByThreadKey: Record<string, true>,
+  ref: ScopedThreadRef | null | undefined,
+): boolean {
+  if (!ref) return false;
+  const threadKey = scopedThreadKey(ref);
+  return Boolean(panelFirstByThreadKey[threadKey] || manuallyMaximizedByThreadKey[threadKey]);
+}
 
 export function selectThreadRightPanelState(
   byThreadKey: Record<string, ThreadRightPanelState>,
