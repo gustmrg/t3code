@@ -5891,11 +5891,14 @@ function ChatViewContent(props: ChatViewProps) {
           try {
             const nextDraft = await handleNewThread(
               scopeProjectRef(activeProject.environmentId, activeProject.id),
-              resolveBackgroundDraftWorkspaceOptions({
-                envMode: sendEnvMode,
-                branch: activeThreadBranch,
-                startFromOrigin,
-              }),
+              {
+                ...resolveBackgroundDraftWorkspaceOptions({
+                  envMode: sendEnvMode,
+                  branch: activeThreadBranch,
+                  startFromOrigin,
+                }),
+                forceChat: true,
+              },
             );
             if (nextDraft) {
               finalizePromotedDraftThreadByRef(backgroundThreadRef);

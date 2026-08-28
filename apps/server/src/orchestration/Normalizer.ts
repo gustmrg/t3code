@@ -6,6 +6,7 @@ import {
   type ClientOrchestrationCommand,
   type IsoDateTime,
   type OrchestrationCommand,
+  type ThreadMaterializeCommand,
   OrchestrationDispatchCommandError,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
@@ -72,6 +73,8 @@ const removeClaimedAttachmentPaths = Effect.fn("Normalizer.removeClaimedAttachme
   },
 );
 
+export type NormalizedClientOrchestrationCommand = OrchestrationCommand | ThreadMaterializeCommand;
+
 export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
   Effect.gen(function* () {
     const receivedAt = DateTime.formatIso(yield* DateTime.now);
@@ -127,6 +130,10 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
         ...canonicalCommand,
         workspaceRoot: yield* normalizeProjectWorkspaceRoot(canonicalCommand.workspaceRoot),
       } satisfies OrchestrationCommand;
+    }
+
+    if (canonicalCommand.type === "thread.materialize") {
+      return canonicalCommand;
     }
 
     if (canonicalCommand.type !== "thread.turn.start") {
@@ -268,7 +275,10 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
 
 export const cleanupFailedUploadedAttachments = Effect.fn(
   "Normalizer.cleanupFailedUploadedAttachments",
-)(function* (command: ClientOrchestrationCommand, normalizedCommand: OrchestrationCommand) {
+)(function* (
+  command: ClientOrchestrationCommand,
+  normalizedCommand: NormalizedClientOrchestrationCommand,
+) {
   if (command.type !== "thread.turn.start" || normalizedCommand.type !== "thread.turn.start") {
     return;
   }

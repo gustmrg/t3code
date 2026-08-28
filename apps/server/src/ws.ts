@@ -23,6 +23,7 @@ import {
   type FileManagerRevealKind,
   type OrchestrationClientOrigin,
   type OrchestrationCommand,
+  type ThreadMaterializeCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
   OrchestrationDispatchCommandError,
@@ -78,6 +79,7 @@ import {
 import {
   cleanupFailedUploadedAttachments,
   normalizeDispatchCommand,
+  type NormalizedClientOrchestrationCommand,
 } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -445,9 +447,10 @@ const makeWsRpcLayer = (
           hasClientOrigin ? { origin: clientOrigin } : undefined,
         );
       const originProps = clientOriginAnalyticsProps(clientOrigin);
-      const recordClientCommandAnalytics = (command: OrchestrationCommand) => {
+      const recordClientCommandAnalytics = (command: NormalizedClientOrchestrationCommand) => {
         switch (command.type) {
           case "thread.create":
+          case "thread.materialize":
             return analytics.record("client.thread.started", originProps);
           case "thread.turn.start":
             return command.bootstrap?.createThread
@@ -856,16 +859,40 @@ const makeWsRpcLayer = (
           Stream.flatMap((items) => Stream.fromIterable(items)),
         );
 
-      const dispatchBootstrapTurnStart = (
-        command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
+      const dispatchThreadBootstrap = (
+        command:
+          | Extract<OrchestrationCommand, { type: "thread.turn.start" }>
+          | ThreadMaterializeCommand,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
         Effect.gen(function* () {
-          const bootstrap = command.bootstrap;
-          const { bootstrap: _bootstrap, ...finalTurnStartCommand } = command;
+          const bootstrap =
+            command.type === "thread.materialize"
+              ? {
+                  createThread: {
+                    projectId: command.projectId,
+                    title: command.title,
+                    modelSelection: command.modelSelection,
+                    runtimeMode: command.runtimeMode,
+                    interactionMode: command.interactionMode,
+                    branch: command.branch,
+                    worktreePath: command.worktreePath,
+                    createdAt: command.createdAt,
+                  },
+                  ...(command.prepareWorktree ? { prepareWorktree: command.prepareWorktree } : {}),
+                  ...(command.runSetupScript !== undefined
+                    ? { runSetupScript: command.runSetupScript }
+                    : {}),
+                }
+              : command.bootstrap;
+          const finalTurnStartCommand =
+            command.type === "thread.turn.start"
+              ? (({ bootstrap: _bootstrap, ...turnStart }) => turnStart)(command)
+              : null;
           let createdThread = false;
           let targetProjectId = bootstrap?.createThread?.projectId;
           let targetProjectCwd = bootstrap?.prepareWorktree?.projectCwd;
           let targetWorktreePath = bootstrap?.createThread?.worktreePath ?? null;
+          let lastDispatchResult: { readonly sequence: number } | null = null;
 
           const cleanupCreatedThread = () =>
             createdThread
@@ -998,7 +1025,7 @@ const makeWsRpcLayer = (
 
           const bootstrapProgram = Effect.gen(function* () {
             if (bootstrap?.createThread) {
-              yield* dispatchFromClient({
+              lastDispatchResult = yield* dispatchFromClient({
                 type: "thread.create",
                 commandId: yield* serverCommandId("bootstrap-thread-create"),
                 threadId: command.threadId,
@@ -1045,7 +1072,7 @@ const makeWsRpcLayer = (
                 path: null,
               });
               targetWorktreePath = worktree.worktree.path;
-              yield* dispatchFromClient({
+              lastDispatchResult = yield* dispatchFromClient({
                 type: "thread.meta.update",
                 commandId: yield* serverCommandId("bootstrap-thread-meta-update"),
                 threadId: command.threadId,
@@ -1057,7 +1084,15 @@ const makeWsRpcLayer = (
 
             yield* runSetupProgram();
 
-            return yield* dispatchFromClient(finalTurnStartCommand);
+            if (finalTurnStartCommand) {
+              return yield* dispatchFromClient(finalTurnStartCommand);
+            }
+            if (lastDispatchResult) {
+              return lastDispatchResult;
+            }
+            return yield* new OrchestrationDispatchCommandError({
+              message: "Thread materialization completed without a persisted thread.",
+            });
           });
 
           return yield* bootstrapProgram.pipe(
@@ -1092,11 +1127,12 @@ const makeWsRpcLayer = (
         });
 
       const dispatchNormalizedCommand = (
-        normalizedCommand: OrchestrationCommand,
+        normalizedCommand: NormalizedClientOrchestrationCommand,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> => {
         const dispatchEffect =
-          normalizedCommand.type === "thread.turn.start" && normalizedCommand.bootstrap
-            ? dispatchBootstrapTurnStart(normalizedCommand)
+          normalizedCommand.type === "thread.materialize" ||
+          (normalizedCommand.type === "thread.turn.start" && normalizedCommand.bootstrap)
+            ? dispatchThreadBootstrap(normalizedCommand)
             : dispatchFromClient(normalizedCommand).pipe(
                 Effect.mapError((cause) =>
                   toDispatchCommandError(cause, "Failed to dispatch orchestration command"),

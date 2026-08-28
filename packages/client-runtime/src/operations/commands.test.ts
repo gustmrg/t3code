@@ -3,6 +3,7 @@ import {
   EnvironmentId,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
+  ProviderInstanceId,
   ThreadId,
   type ClientOrchestrationCommand,
 } from "@t3tools/contracts";
@@ -24,6 +25,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
   archiveThread,
   createProject,
+  materializeThread,
   settleThread,
   stopThreadSession,
   unsettleThread,
@@ -118,6 +120,35 @@ describe("environment commands", () => {
           createdAt: "2026-06-06T00:01:00.000Z",
         },
       ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("dispatches a timestamped terminal-first materialization command", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+
+      yield* materializeThread({
+        threadId: ThreadId.make("thread-terminal"),
+        projectId: ProjectId.make("project-1"),
+        title: "New thread",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.6-sol",
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdAt: "2026-06-06T00:02:00.000Z",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(dispatched[0]).toMatchObject({
+        type: "thread.materialize",
+        commandId: "00000000-0000-4000-8000-000000000000",
+        threadId: "thread-terminal",
+        createdAt: "2026-06-06T00:02:00.000Z",
+      });
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
   );
 

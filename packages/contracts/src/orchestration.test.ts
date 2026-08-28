@@ -352,6 +352,35 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
   }),
 );
 
+it.effect("accepts terminal-first thread materialization without a turn", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeClientOrchestrationCommand({
+      type: "thread.materialize",
+      commandId: "cmd-materialize",
+      threadId: "thread-1",
+      projectId: "project-1",
+      title: "New thread",
+      modelSelection: { instanceId: "codex", model: "gpt-5.6-sol" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      prepareWorktree: {
+        projectCwd: "/tmp/workspace",
+        baseBranch: "main",
+        branch: "t3code/example",
+      },
+      runSetupScript: true,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.strictEqual(parsed.type, "thread.materialize");
+    if (parsed.type !== "thread.materialize") return;
+    assert.strictEqual(parsed.prepareWorktree?.baseBranch, "main");
+    assert.strictEqual(parsed.runSetupScript, true);
+  }),
+);
+
 it.effect("decodes thread.created runtime mode for historical events", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeThreadCreatedPayload({

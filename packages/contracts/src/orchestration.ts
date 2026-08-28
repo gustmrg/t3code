@@ -699,10 +699,7 @@ const ProjectDeleteCommand = Schema.Struct({
   force: Schema.optional(Schema.Boolean),
 });
 
-const ThreadCreateCommand = Schema.Struct({
-  type: Schema.Literal("thread.create"),
-  commandId: CommandId,
-  threadId: ThreadId,
+const ThreadCreateFields = {
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
@@ -713,6 +710,13 @@ const ThreadCreateCommand = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
+} as const;
+
+const ThreadCreateCommand = Schema.Struct({
+  type: Schema.Literal("thread.create"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  ...ThreadCreateFields,
 });
 
 const ThreadDeleteCommand = Schema.Struct({
@@ -858,6 +862,17 @@ const ThreadTurnStartBootstrap = Schema.Struct({
 
 export type ThreadTurnStartBootstrap = typeof ThreadTurnStartBootstrap.Type;
 
+/** Materialize a thread and its final workspace without starting a provider turn. */
+export const ThreadMaterializeCommand = Schema.Struct({
+  type: Schema.Literal("thread.materialize"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  ...ThreadCreateFields,
+  prepareWorktree: Schema.optional(ThreadTurnStartBootstrapPrepareWorktree),
+  runSetupScript: Schema.optional(Schema.Boolean),
+});
+export type ThreadMaterializeCommand = typeof ThreadMaterializeCommand.Type;
+
 export const ThreadTurnStartCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.start"),
   commandId: CommandId,
@@ -978,6 +993,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
   ThreadCreateCommand,
+  ThreadMaterializeCommand,
   ThreadDeleteCommand,
   ThreadArchiveCommand,
   ThreadUnarchiveCommand,

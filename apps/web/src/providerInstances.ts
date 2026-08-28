@@ -29,9 +29,10 @@ import {
 import { formatProviderDriverKindLabel } from "./providerModels";
 
 /**
- * Local-only placeholder used while a draft has no provider it can safely
- * target. It must never be persisted or dispatched; the composer disables
- * send until a live provider replaces it.
+ * Placeholder used while a draft or terminal-only thread has no provider it
+ * can safely target. It may be persisted by shell-only materialization, but
+ * must never be dispatched to a provider; the composer replaces it with a
+ * live selection before enabling send.
  */
 export const NO_PROVIDER_MODEL_SELECTION: ModelSelection = {
   instanceId: ProviderInstanceId.make("t3code_no_provider"),

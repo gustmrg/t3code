@@ -96,6 +96,12 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
           const normalizedCommand = yield* normalizeDispatchCommand(args.payload).pipe(
             Effect.catch(() => failEnvironmentInvalidRequest("invalid_command")),
           );
+          // Materialization coordinates worktree and setup-script side effects in the
+          // environment WebSocket layer. The HTTP endpoint is reserved for direct
+          // event-sourced commands used by the project CLI.
+          if (normalizedCommand.type === "thread.materialize") {
+            return yield* failEnvironmentInvalidRequest("invalid_command");
+          }
           return yield* orchestrationEngine.dispatch(normalizedCommand).pipe(
             Effect.tapError(() =>
               cleanupFailedUploadedAttachments(args.payload, normalizedCommand),

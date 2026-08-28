@@ -218,8 +218,50 @@ export function readProject(ref: ScopedProjectRef): EnvironmentProject | null {
   return appAtomRegistry.get(environmentProjects.projectAtom(ref));
 }
 
+/** Wait for a newly created project's shell projection without polling. */
+export function waitForProject(ref: ScopedProjectRef): Promise<EnvironmentProject> {
+  const atom = environmentProjects.projectAtom(ref);
+  const current = appAtomRegistry.get(atom);
+  if (current) return Promise.resolve(current);
+
+  return new Promise((resolve) => {
+    let unsubscribe = () => {};
+    unsubscribe = appAtomRegistry.subscribe(atom, (project) => {
+      if (!project) return;
+      unsubscribe();
+      resolve(project);
+    });
+    const afterSubscribe = appAtomRegistry.get(atom);
+    if (afterSubscribe) {
+      unsubscribe();
+      resolve(afterSubscribe);
+    }
+  });
+}
+
 export function readThreadShell(ref: ScopedThreadRef): EnvironmentThreadShell | null {
   return appAtomRegistry.get(environmentThreadShells.threadShellAtom(ref));
+}
+
+/** Wait for the shell projection receipt for a newly materialized thread. */
+export function waitForThreadShell(ref: ScopedThreadRef): Promise<EnvironmentThreadShell> {
+  const atom = environmentThreadShells.threadShellAtom(ref);
+  const current = appAtomRegistry.get(atom);
+  if (current) return Promise.resolve(current);
+
+  return new Promise((resolve) => {
+    let unsubscribe = () => {};
+    unsubscribe = appAtomRegistry.subscribe(atom, (thread) => {
+      if (!thread) return;
+      unsubscribe();
+      resolve(thread);
+    });
+    const afterSubscribe = appAtomRegistry.get(atom);
+    if (afterSubscribe) {
+      unsubscribe();
+      resolve(afterSubscribe);
+    }
+  });
 }
 
 /** Whether the environment's server understands thread.settle/unsettle.

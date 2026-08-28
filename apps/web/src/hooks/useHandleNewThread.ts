@@ -4,7 +4,16 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { DEFAULT_RUNTIME_MODE, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
+import { resolveThreadLaunchPreference } from "@t3tools/client-runtime/thread-launch-preference";
+import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import {
+  DEFAULT_RUNTIME_MODE,
+  type ModelSelection,
+  type ScopedProjectRef,
+  type ThreadId,
+} from "@t3tools/contracts";
+import { projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
@@ -15,7 +24,7 @@ import {
   type DraftThreadState,
   useComposerDraftStore,
 } from "../composerDraftStore";
-import { newDraftId, newThreadId } from "../lib/utils";
+import { newDraftId, newThreadId, randomHex } from "../lib/utils";
 import { orderItemsByPreferredIds } from "../components/Sidebar.logic";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -23,19 +32,49 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
-import { readThreadShell, useProjects, useThread } from "../state/entities";
+import {
+  readThreadShell,
+  useProjects,
+  useThread,
+  waitForProject,
+  waitForThreadShell,
+} from "../state/entities";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
 import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
 import { primaryServerSettingsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
+import { useAtomCommand } from "../state/use-atom-command";
+import { threadEnvironment } from "../state/threads";
+import { terminalEnvironment } from "../state/terminal";
+import { useEnvironments } from "../state/environments";
+import {
+  deriveProviderInstanceEntries,
+  NO_PROVIDER_MODEL_SELECTION,
+  resolveDefaultProviderModelSelection,
+} from "../providerInstances";
+import { useRightPanelStore } from "../rightPanelStore";
+import { DEFAULT_THREAD_TERMINAL_ID } from "../types";
+import {
+  buildTerminalMaterializeInput,
+  coordinateTerminalFirstLaunch,
+} from "../lib/newThreadLaunch";
+import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 
 interface NewThreadWorkspaceOptions {
   branch?: string | null;
   worktreePath?: string | null;
   envMode?: DraftThreadEnvMode;
   startFromOrigin?: boolean;
+}
+
+interface NewThreadOptions extends NewThreadWorkspaceOptions {
+  replace?: boolean;
+  carryComposerContent?: boolean;
+  /** Internal continuation flows can request a fresh structured composer explicitly. */
+  forceChat?: boolean;
 }
 
 // The workspace options the caller passed explicitly, shaped for the draft
@@ -50,7 +89,7 @@ function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undef
   };
 }
 
-export function useNewThreadHandler() {
+function useDraftNewThreadHandler() {
   const projects = useProjects();
   // New-thread defaults are a user preference, and the settings UI only ever
   // edits the primary environment's settings.json. Reading the target
@@ -68,21 +107,7 @@ export function useNewThreadHandler() {
   return useCallback(
     (
       projectRef: ScopedProjectRef,
-      options?: {
-        branch?: string | null;
-        worktreePath?: string | null;
-        envMode?: DraftThreadEnvMode;
-        startFromOrigin?: boolean;
-        replace?: boolean;
-        /**
-         * Move the viewed draft's typed content (prompt + images) into the
-         * draft this request lands on. Set by the draft repo picker: the
-         * user started writing in the wrong project and the text should
-         * follow them. Explicit new-thread surfaces leave this unset and
-         * keep mint-fresh semantics.
-         */
-        carryComposerContent?: boolean;
-      },
+      options?: NewThreadOptions,
       // Which draft the thread ended up in, so a caller that has something to put in it — a
       // prepared checkout, a task to write — addresses that one rather than looking the project
       // up again and finding whichever draft it happens to hold.
@@ -431,6 +456,184 @@ export function useNewThreadHandler() {
       })();
     },
     [getCurrentRouteTarget, primaryServerSettings, projectGroupingSettings, projects, router],
+  );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "An unexpected error occurred.";
+}
+
+/** Shared new-thread coordinator used by every web entry point. */
+export function useNewThreadHandler() {
+  const openDraft = useDraftNewThreadHandler();
+  const { environments } = useEnvironments();
+  const materializeThread = useAtomCommand(threadEnvironment.materialize, {
+    reportFailure: false,
+  });
+  const openTerminal = useAtomCommand(terminalEnvironment.open, { reportFailure: false });
+  const router = useRouter();
+
+  return useCallback(
+    async (projectRef: ScopedProjectRef, options?: NewThreadOptions) => {
+      const openedDraft = await openDraft(projectRef, options);
+      if (!openedDraft) return null;
+      if (options?.forceChat) return openedDraft;
+
+      const project = await waitForProject(projectRef);
+      const primaryServerSettings = appAtomRegistry.get(primaryServerSettingsAtom);
+
+      const providers =
+        environments.find((environment) => environment.environmentId === projectRef.environmentId)
+          ?.serverConfig?.providers ?? [];
+      const launchPreference = resolveThreadLaunchPreference({
+        application: {
+          defaultThreadView: primaryServerSettings.defaultThreadView,
+          terminalStartup: primaryServerSettings.terminalStartup,
+        },
+        projectOverride: project.threadLaunchPreference ?? null,
+        terminalWorkspaceSupported: true,
+        availableProviderInstanceIds: deriveProviderInstanceEntries(providers).map(
+          (entry) => entry.instanceId,
+        ),
+      });
+      if (launchPreference.view === "chat") return openedDraft;
+
+      const draftStore = useComposerDraftStore.getState();
+      const draft = draftStore.getDraftSession(openedDraft.draftId);
+      if (!draft || draft.threadId !== openedDraft.threadId) return openedDraft;
+
+      const composer = draftStore.getComposerDraft(openedDraft.draftId);
+      const composerSelection = composer?.activeProvider
+        ? composer.modelSelectionByProvider[composer.activeProvider]
+        : null;
+      const modelSelection: ModelSelection =
+        composerSelection ??
+        project.defaultModelSelection ??
+        resolveDefaultProviderModelSelection(providers, null) ??
+        NO_PROVIDER_MODEL_SELECTION;
+      const threadRef = scopeThreadRef(draft.environmentId, draft.threadId);
+      const materializeInput = buildTerminalMaterializeInput({
+        threadId: draft.threadId,
+        projectId: project.id,
+        modelSelection,
+        runtimeMode: draft.runtimeMode,
+        interactionMode: draft.interactionMode,
+        envMode: draft.envMode,
+        projectCwd: project.workspaceRoot,
+        branch: draft.branch,
+        worktreePath: draft.worktreePath,
+        startFromOrigin: draft.startFromOrigin,
+        randomHex,
+      });
+
+      const result = await coordinateTerminalFirstLaunch({
+        threadRef,
+        materializeInput,
+        operations: {
+          materialize: async (input) => {
+            const commandResult = await materializeThread({
+              environmentId: threadRef.environmentId,
+              input,
+            });
+            return commandResult._tag === "Failure"
+              ? { _tag: "Failure", error: squashAtomCommandFailure(commandResult) }
+              : { _tag: "Success", value: commandResult.value };
+          },
+          waitForThreadShell,
+          navigateToThread: async (materializedThreadRef) => {
+            markPromotedDraftThreadByRef(materializedThreadRef);
+            await router.navigate({
+              to: "/$environmentId/$threadId",
+              params: {
+                environmentId: materializedThreadRef.environmentId,
+                threadId: materializedThreadRef.threadId,
+              },
+              replace: true,
+            });
+          },
+          terminalInput: (thread) => {
+            const worktreePath = thread.worktreePath ?? null;
+            return {
+              threadId: thread.id,
+              terminalId: DEFAULT_THREAD_TERMINAL_ID,
+              cwd: worktreePath ?? project.workspaceRoot,
+              ...(worktreePath ? { worktreePath } : {}),
+              env: projectScriptRuntimeEnv({
+                project: { cwd: project.workspaceRoot },
+                worktreePath,
+              }),
+            };
+          },
+          openTerminal: async (input) => {
+            const terminalResult = await openTerminal({
+              environmentId: threadRef.environmentId,
+              input,
+            });
+            return terminalResult._tag === "Failure"
+              ? { _tag: "Failure", error: squashAtomCommandFailure(terminalResult) }
+              : { _tag: "Success", value: terminalResult.value };
+          },
+          activateTerminalWorkspace: () => {
+            const panel = useRightPanelStore.getState();
+            panel.openTerminal(threadRef, DEFAULT_THREAD_TERMINAL_ID);
+            panel.setPanelFirst(threadRef, true);
+          },
+          restoreChatWorkspace: () => {
+            useRightPanelStore.getState().restoreSplit(threadRef);
+          },
+        },
+      });
+
+      if (result._tag === "MaterializeFailure") {
+        if (wasBootstrapThreadDeleted(result.error)) {
+          const failedDraft = draftStore.getDraftSession(openedDraft.draftId);
+          if (failedDraft?.threadId === openedDraft.threadId) {
+            draftStore.setLogicalProjectDraftThreadId(
+              failedDraft.logicalProjectKey,
+              scopeProjectRef(failedDraft.environmentId, failedDraft.projectId),
+              openedDraft.draftId,
+              { threadId: newThreadId(), createdAt: new Date().toISOString() },
+            );
+          }
+        }
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not create terminal workspace",
+            description: errorMessage(result.error),
+          }),
+        );
+        return openedDraft;
+      }
+      if (result._tag === "TerminalFailure") {
+        const retry = result.retry;
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Thread created, but the terminal did not open",
+            description: errorMessage(result.error),
+            actionProps: {
+              children: "Retry",
+              onClick: () => {
+                void retry().then((retryResult) => {
+                  if (retryResult._tag === "Failure") {
+                    toastManager.add(
+                      stackedThreadToast({
+                        type: "error",
+                        title: "Could not open terminal",
+                        description: errorMessage(retryResult.error),
+                      }),
+                    );
+                  }
+                });
+              },
+            },
+          }),
+        );
+      }
+      return openedDraft;
+    },
+    [environments, materializeThread, openDraft, openTerminal, router],
   );
 }
 
