@@ -132,6 +132,7 @@ already dispatch.
 ## Related
 
 - [Workspace layout](./workspace-layout.md), [Glossary](./glossary.md)
+- [Terminal-first workspaces](./terminal-first-workspaces.md)
 - [Remote environments](./remote.md), [Server updates](./server-updates.md)
 - [Resource telemetry](./resource-telemetry.md)
 - [Scripts](./scripts.md), [CI gates](./ci.md)

@@ -156,6 +156,7 @@ import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
+import { subscribeWorkspaceAction, type WorkspaceAction } from "../workspaceActionBus";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import {
@@ -3522,12 +3523,9 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [activeProject, activeProjectRepository, activeThreadRef, supportsPullRequests],
   );
-  const togglePreviewPanel = useCallback(() => {
+  const openPreviewPanel = useCallback(() => {
     if (!activeThreadRef || !isPreviewSupportedInRuntime()) return;
-    if (previewPanelOpen) {
-      useRightPanelStore.getState().close(activeThreadRef);
-      return;
-    }
+    if (previewPanelOpen) return;
     const activeTabId = activePreviewState.activeTabId;
     if (activeTabId) {
       useRightPanelStore.getState().openBrowser(activeThreadRef, activeTabId);
@@ -3535,6 +3533,14 @@ function ChatViewContent(props: ChatViewProps) {
       createBrowserSurface();
     }
   }, [activePreviewState.activeTabId, activeThreadRef, createBrowserSurface, previewPanelOpen]);
+  const togglePreviewPanel = useCallback(() => {
+    if (!activeThreadRef || !isPreviewSupportedInRuntime()) return;
+    if (previewPanelOpen) {
+      useRightPanelStore.getState().close(activeThreadRef);
+      return;
+    }
+    openPreviewPanel();
+  }, [activeThreadRef, openPreviewPanel, previewPanelOpen]);
   const closePreviewPanel = useCallback(() => {
     if (activeThreadRef) {
       useRightPanelStore.getState().close(activeThreadRef);
@@ -3671,6 +3677,75 @@ function ChatViewContent(props: ChatViewProps) {
       }
     },
     [activeThreadRef, diffOpen, onDiffPanelOpen],
+  );
+  const handleWorkspaceAction = useCallback(
+    (action: WorkspaceAction) => {
+      if (!activeThreadRef) return;
+      if (action === "restore-chat") {
+        useRightPanelStore.getState().restoreSplit(activeThreadRef);
+        return;
+      }
+      if (action === "use-panel-workspace") {
+        if (rightPanelOpen && !shouldUseRightPanelSheet) {
+          useRightPanelStore.getState().setPanelFirst(activeThreadRef, true);
+        }
+        return;
+      }
+
+      if (action === "open-terminal") {
+        if (!activeProject) {
+          toastManager.add({
+            type: "info",
+            title: "Terminal unavailable",
+            description: "Open a thread whose project is available in this environment.",
+          });
+          return;
+        }
+        const existing = rightPanelState.surfaces.find((surface) => surface.kind === "terminal");
+        if (existing) activateRightPanelSurface(existing);
+        else addTerminalSurface();
+      } else if (action === "open-diff") {
+        if (!isServerThread || !isGitRepo) {
+          toastManager.add({
+            type: "info",
+            title: "Changes unavailable",
+            description: "Changes require a server thread in a Git repository.",
+          });
+          return;
+        }
+        addDiffSurface();
+      } else if (action === "open-files") {
+        if (!activeProject) {
+          toastManager.add({
+            type: "info",
+            title: "Files unavailable",
+            description: "The thread's project is not available in this environment.",
+          });
+          return;
+        }
+        addFilesSurface();
+      } else if (action === "open-preview") {
+        if (!isPreviewSupportedInRuntime()) return;
+        openPreviewPanel();
+      }
+      if (!shouldUseRightPanelSheet) {
+        useRightPanelStore.getState().setPanelFirst(activeThreadRef, true);
+      }
+    },
+    [
+      activateRightPanelSurface,
+      activeProject,
+      activeThreadRef,
+      addDiffSurface,
+      addFilesSurface,
+      addTerminalSurface,
+      isGitRepo,
+      isServerThread,
+      openPreviewPanel,
+      rightPanelOpen,
+      rightPanelState.surfaces,
+      shouldUseRightPanelSheet,
+    ],
   );
   const toggleRightPanel = useCallback(() => {
     if (!activeThreadRef) return;
@@ -3831,6 +3906,7 @@ function ChatViewContent(props: ChatViewProps) {
       }),
     [togglePreviewPanel],
   );
+  useEffect(() => subscribeWorkspaceAction(handleWorkspaceAction), [handleWorkspaceAction]);
   const persistThreadSettingsForNextTurn = useCallback(
     async (input: {
       threadId: ThreadId;

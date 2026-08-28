@@ -14,3 +14,14 @@ T3 Code supports SVG, PNG, ICO, JPEG, GIF, AVIF, and WebP files. The selected pa
 each checkout in the project group and appears on your connected clients.
 
 To use automatic detection again, select **Automatic**.
+
+## Choose how new threads open
+
+Each project can inherit the application default or open new threads in **Chat** or **Terminal**.
+Open **Settings** → **Projects**, select the project, and change **Default view**.
+
+When Terminal is selected, **Open terminal with** can inherit the application setting, open a shell,
+or start a configured provider CLI. The override applies to every checkout in the project group.
+
+See [Terminal-first workspaces](./terminal-workspaces.md) for shell fallback, full-width Changes, and
+the separation between terminal CLI conversations and structured chat.

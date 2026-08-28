@@ -28,6 +28,13 @@ The root filesystem path for a project. In [the orchestration model][1], it is t
 
 A Git worktree used as an isolated workspace for a thread. If a thread has a `worktreePath` in [the contracts][1], it runs there instead of in the main working tree. Git operations live behind the VCS driver contract in `apps/server/src/vcs/VcsDriver.ts`, implemented by [GitVcsDriverCore.ts][3].
 
+#### Terminal-first workspace
+
+A new-thread presentation that materializes a durable thread immediately, opens a PTY in its final
+project or worktree directory, and promotes the shared right panel to the primary workspace. A
+provider CLI started there remains independent from the structured provider session. See
+[terminal-first-workspaces.md][25].
+
 ### Thread timeline
 
 #### Thread
@@ -158,6 +165,7 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 - [Provider architecture][16]
 - [Permission modes][18]
 - [Workspace layout][2]
+- [Terminal-first workspaces][25]
 
 [1]: ../../packages/contracts/src/orchestration.ts
 [2]: ./workspace-layout.md
@@ -183,3 +191,4 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
+[25]: ./terminal-first-workspaces.md

@@ -497,6 +497,19 @@ export function useNewThreadHandler() {
         ),
       });
       if (launchPreference.view === "chat") return openedDraft;
+      if (launchPreference.fallback?._tag === "provider-unavailable") {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Starting terminal with a shell",
+            description: `The configured provider “${launchPreference.fallback.providerInstanceId}” is unavailable.`,
+            actionProps: {
+              children: "Choose agent",
+              onClick: () => void router.navigate({ to: "/settings/general" }),
+            },
+          }),
+        );
+      }
 
       const draftStore = useComposerDraftStore.getState();
       const draft = draftStore.getDraftSession(openedDraft.draftId);

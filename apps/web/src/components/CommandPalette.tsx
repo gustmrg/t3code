@@ -37,14 +37,19 @@ import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
   CornerLeftUpIcon,
+  FileDiffIcon,
   FileSearchIcon,
   FolderIcon,
   FolderPlusIcon,
+  Globe2Icon,
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
+  PanelRightIcon,
+  PanelsTopLeftIcon,
   ServerIcon,
   SettingsIcon,
+  SquareTerminalIcon,
   SquarePenIcon,
   TextSearchIcon,
 } from "lucide-react";
@@ -93,7 +98,14 @@ import {
 import { onOpenCommandPalette } from "../commandPaletteBus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
-import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
+import {
+  selectActiveRightPanel,
+  selectRightPanelMaximized,
+  selectThreadRightPanelState,
+  useRightPanelStore,
+} from "../rightPanelStore";
+import { isPreviewSupportedInRuntime } from "../previewStateStore";
+import { dispatchWorkspaceAction } from "../workspaceActionBus";
 import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
 import {
   cn,
@@ -587,6 +599,23 @@ function OpenCommandPaletteDialog(props: {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const activeWorkspaceThreadRef = activeThread
+    ? scopeThreadRef(activeThread.environmentId, activeThread.id)
+    : null;
+  const workspacePanelOpen = useRightPanelStore((state) =>
+    activeWorkspaceThreadRef
+      ? selectThreadRightPanelState(state.byThreadKey, activeWorkspaceThreadRef).isOpen
+      : false,
+  );
+  const workspacePanelMaximized = useRightPanelStore((state) =>
+    activeWorkspaceThreadRef
+      ? selectRightPanelMaximized(
+          state.panelFirstByThreadKey,
+          state.manuallyMaximizedByThreadKey,
+          activeWorkspaceThreadRef,
+        )
+      : false,
+  );
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
@@ -1523,6 +1552,74 @@ function OpenCommandPaletteDialog(props: {
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
+  }
+
+  if (activeThread) {
+    actionItems.push(
+      {
+        kind: "action",
+        value: "action:workspace-terminal",
+        searchTerms: ["workspace", "terminal", "shell", "panel", "full width"],
+        title: "Open Terminal as workspace",
+        description: "Use the terminal in the full-width primary panel.",
+        icon: <SquareTerminalIcon className={ITEM_ICON_CLASS} />,
+        run: async () => dispatchWorkspaceAction("open-terminal"),
+      },
+      {
+        kind: "action",
+        value: "action:workspace-changes",
+        searchTerms: ["workspace", "changes", "diff", "review", "panel", "full width"],
+        title: "Open Changes as workspace",
+        description: "Review this thread's diff in the full-width primary panel.",
+        icon: <FileDiffIcon className={ITEM_ICON_CLASS} />,
+        run: async () => dispatchWorkspaceAction("open-diff"),
+      },
+      {
+        kind: "action",
+        value: "action:workspace-files",
+        searchTerms: ["workspace", "files", "browse", "panel", "full width"],
+        title: "Open Files as workspace",
+        description: "Browse project files in the full-width primary panel.",
+        icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+        run: async () => dispatchWorkspaceAction("open-files"),
+      },
+      {
+        kind: "action",
+        value: "action:workspace-preview",
+        searchTerms: ["workspace", "preview", "browser", "panel", "full width"],
+        title: "Open Preview as workspace",
+        description: isPreviewSupportedInRuntime()
+          ? "Use Preview in the full-width primary panel."
+          : "Preview is available in the desktop app.",
+        disabled: !isPreviewSupportedInRuntime(),
+        icon: <Globe2Icon className={ITEM_ICON_CLASS} />,
+        run: async () => dispatchWorkspaceAction("open-preview"),
+      },
+      {
+        kind: "action",
+        value: "action:workspace-maximize",
+        searchTerms: ["workspace", "maximize", "panel", "full width", "hide chat"],
+        title: "Use panel as workspace",
+        description: workspacePanelOpen
+          ? "Keep the current panel full-width while switching tabs."
+          : "Open a workspace panel first.",
+        disabled: !workspacePanelOpen,
+        icon: <PanelRightIcon className={ITEM_ICON_CLASS} />,
+        run: async () => dispatchWorkspaceAction("use-panel-workspace"),
+      },
+      {
+        kind: "action",
+        value: "action:workspace-restore-chat",
+        searchTerms: ["workspace", "restore", "chat", "split", "panel"],
+        title: "Restore Chat and panel split",
+        description: workspacePanelMaximized
+          ? "Show structured chat beside the current workspace panel."
+          : "Chat and the workspace panel are already split.",
+        disabled: !workspacePanelMaximized,
+        icon: <PanelsTopLeftIcon className={ITEM_ICON_CLASS} />,
+        run: async () => dispatchWorkspaceAction("restore-chat"),
+      },
+    );
   }
 
   actionItems.push({
