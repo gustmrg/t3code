@@ -187,6 +187,8 @@ function makeRegistry(
 
     const registry: ProviderRegistryShape = {
       getProviders: Ref.get(providersRef),
+      // @effect-diagnostics-next-line effectSucceedWithVoid:off
+      getTerminalLaunchTarget: () => Effect.succeed(undefined),
       refresh: () => Ref.get(providersRef),
       refreshInstance: () => Ref.get(providersRef),
       getProviderMaintenanceCapabilitiesForInstance: (_instanceId, provider) =>

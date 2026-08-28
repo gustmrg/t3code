@@ -8,6 +8,7 @@ import type {
   RuntimeMode,
   ScopedThreadRef,
   TerminalOpenInput,
+  TerminalSessionSnapshot,
   ThreadId,
 } from "@t3tools/contracts";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
@@ -54,7 +55,11 @@ export type LaunchStepResult<T> =
   | { readonly _tag: "Failure"; readonly error: unknown };
 
 export type TerminalFirstLaunchResult =
-  | { readonly _tag: "Success" }
+  | {
+      readonly _tag: "Success";
+      readonly terminal: TerminalSessionSnapshot;
+      readonly retryAgent: () => Promise<LaunchStepResult<TerminalSessionSnapshot>>;
+    }
   | { readonly _tag: "MaterializeFailure"; readonly error: unknown }
   | {
       readonly _tag: "TerminalFailure";
@@ -66,7 +71,9 @@ export interface TerminalFirstLaunchOperations<MaterializeInput> {
   readonly materialize: (input: MaterializeInput) => Promise<LaunchStepResult<unknown>>;
   readonly waitForThreadShell: (threadRef: ScopedThreadRef) => Promise<OrchestrationThreadShell>;
   readonly navigateToThread: (threadRef: ScopedThreadRef) => Promise<void>;
-  readonly openTerminal: (input: TerminalOpenInput) => Promise<LaunchStepResult<unknown>>;
+  readonly openTerminal: (
+    input: TerminalOpenInput,
+  ) => Promise<LaunchStepResult<TerminalSessionSnapshot>>;
   readonly terminalInput: (thread: OrchestrationThreadShell) => TerminalOpenInput;
   readonly activateTerminalWorkspace: () => void;
   readonly restoreChatWorkspace: () => void;
@@ -107,7 +114,7 @@ export function coordinateTerminalFirstLaunch<MaterializeInput>(input: {
       input.operations.restoreChatWorkspace();
       return { _tag: "TerminalFailure", error: opened.error, retry: activateTerminal };
     }
-    return { _tag: "Success" };
+    return { _tag: "Success", terminal: opened.value, retryAgent: openTerminal };
   })().finally(() => {
     if (inFlightTerminalLaunches.get(threadKey) === launch) {
       inFlightTerminalLaunches.delete(threadKey);

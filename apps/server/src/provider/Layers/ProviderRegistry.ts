@@ -706,6 +706,19 @@ export const ProviderRegistryLive = Layer.effect(
 
     return {
       getProviders: Ref.get(providersRef),
+      getTerminalLaunchTarget: (instanceId: ProviderInstanceId) =>
+        instanceRegistry.getInstance(instanceId).pipe(
+          Effect.map((instance) =>
+            instance
+              ? {
+                  enabled: instance.enabled,
+                  displayName: instance.displayName,
+                  driverKind: instance.driverKind,
+                  terminalLaunch: instance.terminalLaunch,
+                }
+              : undefined,
+          ),
+        ),
       refresh: (provider?: ProviderDriverKind) =>
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
       refreshInstance: (instanceId: ProviderInstanceId) =>

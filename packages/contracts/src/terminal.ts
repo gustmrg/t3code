@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ProviderInstanceId } from "./providerInstance.ts";
 
 /**
  * Client-side id for the first shell opened on a thread. Ids are uniformly
@@ -24,6 +25,22 @@ const TerminalEnvSchema = Schema.Record(TerminalEnvKeySchema, TerminalEnvValueSc
   Schema.isMaxProperties(128),
 );
 
+export const TerminalAgentLaunchIntent = Schema.Struct({
+  providerInstanceId: ProviderInstanceId,
+});
+export type TerminalAgentLaunchIntent = typeof TerminalAgentLaunchIntent.Type;
+
+export const TerminalAgentLaunchStatus = Schema.Literals(["started", "unavailable", "failed"]);
+export type TerminalAgentLaunchStatus = typeof TerminalAgentLaunchStatus.Type;
+
+export const TerminalAgentLaunchResult = Schema.Struct({
+  providerInstanceId: ProviderInstanceId,
+  displayName: TrimmedNonEmptyStringSchema,
+  status: TerminalAgentLaunchStatus,
+  message: Schema.optional(TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(512))),
+});
+export type TerminalAgentLaunchResult = typeof TerminalAgentLaunchResult.Type;
+
 export const TerminalThreadInput = Schema.Struct({
   threadId: TrimmedNonEmptyStringSchema,
 });
@@ -43,8 +60,9 @@ export const TerminalOpenInput = Schema.Struct({
   cols: Schema.optional(TerminalColsSchema),
   rows: Schema.optional(TerminalRowsSchema),
   env: Schema.optional(TerminalEnvSchema),
+  agentLaunch: Schema.optional(TerminalAgentLaunchIntent),
 });
-export type TerminalOpenInput = Schema.Codec.Encoded<typeof TerminalOpenInput>;
+export type TerminalOpenInput = typeof TerminalOpenInput.Type;
 
 export const TerminalAttachInput = Schema.Struct({
   ...TerminalSessionInput.fields,
@@ -105,6 +123,7 @@ export const TerminalSessionSnapshot = Schema.Struct({
   exitSignal: Schema.NullOr(Schema.Int),
   /** Server-computed display title (idle shell vs subprocess command). */
   label: Schema.String.check(Schema.isMaxLength(128)),
+  agentLaunch: Schema.optional(TerminalAgentLaunchResult),
   updatedAt: Schema.String,
   sequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
@@ -122,6 +141,7 @@ export const TerminalSummary = Schema.Struct({
   hasRunningSubprocess: Schema.Boolean,
   /** Server-computed display title (idle shell vs subprocess command). */
   label: Schema.String.check(Schema.isMaxLength(128)),
+  agentLaunch: Schema.optional(TerminalAgentLaunchResult),
   updatedAt: Schema.String,
 });
 export type TerminalSummary = typeof TerminalSummary.Type;

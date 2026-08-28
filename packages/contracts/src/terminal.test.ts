@@ -95,6 +95,18 @@ describe("TerminalOpenInput", () => {
     expect(parsed.worktreePath).toBe("/tmp/project/.t3/worktrees/feature-a");
   });
 
+  it("accepts a provider-instance launch intent without a client command", () => {
+    const parsed = decodeSync(TerminalOpenInput, {
+      threadId: "thread-1",
+      terminalId: DEFAULT_TERMINAL_ID,
+      cwd: "/tmp/project",
+      agentLaunch: { providerInstanceId: "codex_work" },
+    });
+
+    expect(parsed.agentLaunch).toEqual({ providerInstanceId: "codex_work" });
+    expect(parsed).not.toHaveProperty("command");
+  });
+
   it("rejects invalid env keys", () => {
     expect(
       decodes(TerminalOpenInput, {

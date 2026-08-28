@@ -5,6 +5,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   type OrchestrationThreadShell,
+  type TerminalSessionSnapshot,
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -82,6 +83,19 @@ describe("coordinateTerminalFirstLaunch", () => {
     id: ref.threadId,
     worktreePath: "/repo-worktree",
   } as OrchestrationThreadShell;
+  const terminal = {
+    threadId: ref.threadId,
+    terminalId: "term-1",
+    cwd: "/repo-worktree",
+    worktreePath: "/repo-worktree",
+    status: "running",
+    pid: 123,
+    history: "",
+    exitCode: null,
+    exitSignal: null,
+    label: "Terminal 1",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  } satisfies TerminalSessionSnapshot;
 
   function operations(overrides: Record<string, unknown> = {}) {
     const calls: string[] = [];
@@ -106,7 +120,7 @@ describe("coordinateTerminalFirstLaunch", () => {
         })),
         openTerminal: vi.fn(async () => {
           calls.push("open-terminal");
-          return { _tag: "Success", value: undefined } as const;
+          return { _tag: "Success", value: terminal } as const;
         }),
         activateTerminalWorkspace: vi.fn(() => calls.push("activate")),
         restoreChatWorkspace: vi.fn(() => calls.push("restore-chat")),
@@ -123,7 +137,7 @@ describe("coordinateTerminalFirstLaunch", () => {
         materializeInput: { threadId: ref.threadId },
         operations: ops.value,
       }),
-    ).resolves.toEqual({ _tag: "Success" });
+    ).resolves.toMatchObject({ _tag: "Success", terminal });
     expect(ops.calls).toEqual([
       "materialize",
       "wait-shell",
@@ -149,11 +163,11 @@ describe("coordinateTerminalFirstLaunch", () => {
   it("restores chat on terminal failure and exposes a working retry", async () => {
     let attempts = 0;
     const ops = operations({
-      openTerminal: async (): Promise<LaunchStepResult<unknown>> => {
+      openTerminal: async (): Promise<LaunchStepResult<TerminalSessionSnapshot>> => {
         attempts += 1;
         return attempts === 1
           ? { _tag: "Failure", error: new Error("pty failed") }
-          : { _tag: "Success", value: undefined };
+          : { _tag: "Success", value: terminal };
       },
     });
     const result = await coordinateTerminalFirstLaunch({
@@ -164,8 +178,42 @@ describe("coordinateTerminalFirstLaunch", () => {
     expect(result._tag).toBe("TerminalFailure");
     expect(ops.value.restoreChatWorkspace).toHaveBeenCalledOnce();
     if (result._tag !== "TerminalFailure") throw new Error("expected terminal failure");
-    await expect(result.retry()).resolves.toEqual({ _tag: "Success", value: undefined });
+    await expect(result.retry()).resolves.toEqual({ _tag: "Success", value: terminal });
     expect(ops.value.activateTerminalWorkspace).toHaveBeenCalledOnce();
+  });
+
+  it("returns provider launch metadata and an agent-only retry without rematerializing", async () => {
+    let attempts = 0;
+    const failedAgentTerminal = {
+      ...terminal,
+      agentLaunch: {
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        displayName: "Codex",
+        status: "failed" as const,
+        message: "Codex was not found.",
+      },
+    };
+    const ops = operations({
+      openTerminal: async () => {
+        attempts += 1;
+        return {
+          _tag: "Success" as const,
+          value: attempts === 1 ? failedAgentTerminal : terminal,
+        };
+      },
+    });
+    const result = await coordinateTerminalFirstLaunch({
+      threadRef: ref,
+      materializeInput: { threadId: ref.threadId },
+      operations: ops.value,
+    });
+
+    expect(result._tag).toBe("Success");
+    if (result._tag !== "Success") throw new Error("expected launch success");
+    expect(result.terminal.agentLaunch?.status).toBe("failed");
+    await expect(result.retryAgent()).resolves.toEqual({ _tag: "Success", value: terminal });
+    expect(ops.value.materialize).toHaveBeenCalledOnce();
+    expect(attempts).toBe(2);
   });
 
   it("deduplicates concurrent launches for the same scoped thread", async () => {

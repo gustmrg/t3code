@@ -52,6 +52,8 @@ const makeTerminalManagerLayer = (
 ) =>
   Layer.succeed(TerminalManager.TerminalManager, {
     ...overrides,
+    recordAgentLaunch: () => Effect.die(new Error("unused")),
+    launchAgent: () => Effect.die(new Error("unused")),
     attachStream: () => Effect.die(new Error("unused")),
     resize: () => Effect.void,
     clear: () => Effect.void,

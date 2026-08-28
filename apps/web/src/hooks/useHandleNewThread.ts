@@ -562,6 +562,13 @@ export function useNewThreadHandler() {
                 project: { cwd: project.workspaceRoot },
                 worktreePath,
               }),
+              ...(launchPreference.terminalStartup._tag === "agent"
+                ? {
+                    agentLaunch: {
+                      providerInstanceId: launchPreference.terminalStartup.providerInstanceId,
+                    },
+                  }
+                : {}),
             };
           },
           openTerminal: async (input) => {
@@ -630,6 +637,69 @@ export function useNewThreadHandler() {
             },
           }),
         );
+      }
+      if (result._tag === "Success" && result.terminal.agentLaunch?.status !== "started") {
+        const agentLaunch = result.terminal.agentLaunch;
+        if (agentLaunch) {
+          const showAgentLaunchFailure = (
+            message: string,
+            retryAgent: typeof result.retryAgent,
+          ) => {
+            let toastId: ReturnType<typeof toastManager.add>;
+            toastId = toastManager.add(
+              stackedThreadToast({
+                type: "warning",
+                title: `${agentLaunch.displayName} did not start`,
+                description: message,
+                actionProps: {
+                  children: "Try again",
+                  onClick: () => {
+                    void retryAgent().then((retryResult) => {
+                      toastManager.close(toastId);
+                      if (retryResult._tag === "Failure") {
+                        showAgentLaunchFailure(errorMessage(retryResult.error), retryAgent);
+                        return;
+                      }
+                      const retryLaunch = retryResult.value.agentLaunch;
+                      if (retryLaunch && retryLaunch.status !== "started") {
+                        showAgentLaunchFailure(
+                          retryLaunch.message ?? "The provider CLI could not be started.",
+                          retryAgent,
+                        );
+                      }
+                    });
+                  },
+                },
+                data: {
+                  threadRef,
+                  additionalActions: [
+                    {
+                      id: "choose-agent",
+                      props: {
+                        children: "Choose agent",
+                        onClick: () => {
+                          toastManager.close(toastId);
+                          void router.navigate({ to: "/settings/general" });
+                        },
+                      },
+                    },
+                    {
+                      id: "continue-shell",
+                      props: {
+                        children: "Continue in shell",
+                        onClick: () => toastManager.close(toastId),
+                      },
+                    },
+                  ],
+                },
+              }),
+            );
+          };
+          showAgentLaunchFailure(
+            agentLaunch.message ?? "The provider CLI could not be started.",
+            result.retryAgent,
+          );
+        }
       }
       return openedDraft;
     },

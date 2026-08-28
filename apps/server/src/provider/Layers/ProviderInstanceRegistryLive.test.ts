@@ -403,6 +403,32 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
       expect(cursor?.displayName).toBe("Cursor");
       expect(grok?.displayName).toBe("Grok");
       expect(openCode?.displayName).toBe("OpenCode");
+      expect(codex?.terminalLaunch).toMatchObject({
+        command: "codex",
+        displayName: "Codex",
+        environment: { CODEX_HOME: "/home/julius/.codex" },
+      });
+      expect(claude?.terminalLaunch).toMatchObject({
+        command: "claude",
+        args: ["--verbose"],
+        displayName: "Claude",
+        environment: { CLAUDE_CONFIG_DIR: "/home/julius/.claude-work" },
+      });
+      expect(cursor?.terminalLaunch).toMatchObject({
+        command: "cursor-agent",
+        args: [],
+        displayName: "Cursor",
+      });
+      expect(grok?.terminalLaunch).toMatchObject({
+        command: "grok",
+        args: [],
+        displayName: "Grok",
+      });
+      expect(openCode?.terminalLaunch).toMatchObject({
+        command: "opencode",
+        args: [],
+        displayName: "OpenCode",
+      });
 
       // Every instance owns its own set of closures — no sharing across
       // drivers. `adapter` / `textGeneration` / `snapshot` are all

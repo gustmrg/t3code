@@ -639,6 +639,8 @@ const buildAppUnderTest = (options?: {
         Layer.mergeAll(
           Layer.mock(ProviderRegistry.ProviderRegistry)({
             getProviders: Effect.succeed([]),
+            // @effect-diagnostics-next-line effectSucceedWithVoid:off
+            getTerminalLaunchTarget: () => Effect.succeed(undefined),
             refresh: () => Effect.succeed([]),
             refreshInstance: () => Effect.succeed([]),
             getProviderMaintenanceCapabilitiesForInstance: (_instanceId, provider) =>
@@ -8422,6 +8424,141 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           }),
         ),
       );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("opens the shell before launching a trusted provider CLI", () =>
+    Effect.gen(function* () {
+      const calls: string[] = [];
+      const providerInstanceId = ProviderInstanceId.make("codex_work");
+      const snapshot = {
+        threadId: "thread-agent",
+        terminalId: "term-1",
+        cwd: "/tmp/project",
+        worktreePath: null,
+        status: "running" as const,
+        pid: 1234,
+        history: "",
+        exitCode: null,
+        exitSignal: null,
+        label: "Terminal 1",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+
+      yield* buildAppUnderTest({
+        layers: {
+          providerRegistry: {
+            getTerminalLaunchTarget: () =>
+              Effect.succeed({
+                enabled: true,
+                displayName: "Codex Work",
+                driverKind: ProviderDriverKind.make("codex"),
+                terminalLaunch: {
+                  command: process.execPath,
+                  args: ["--version"],
+                  environment: { T3_PROVIDER_PROFILE: "work" },
+                  displayName: "Codex Work",
+                },
+              }),
+          },
+          terminalManager: {
+            open: (input) => {
+              calls.push(`open:${input.env?.T3_PROVIDER_PROFILE ?? "missing"}`);
+              return Effect.succeed(snapshot);
+            },
+            launchAgent: (input) => {
+              calls.push(`launch:${input.providerInstanceId}`);
+              return Effect.succeed({
+                ...snapshot,
+                label: input.displayName,
+                agentLaunch: {
+                  providerInstanceId: input.providerInstanceId,
+                  displayName: input.displayName,
+                  status: "started" as const,
+                },
+              });
+            },
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const opened = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.terminalOpen]({
+            threadId: "thread-agent",
+            terminalId: "term-1",
+            cwd: "/tmp/project",
+            agentLaunch: { providerInstanceId },
+          }),
+        ),
+      );
+
+      assert.deepEqual(calls, ["open:work", "launch:codex_work"]);
+      assert.equal(opened.agentLaunch?.status, "started");
+      assert.equal(opened.label, "Codex Work");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("keeps the opened shell when the provider executable is missing", () =>
+    Effect.gen(function* () {
+      const providerInstanceId = ProviderInstanceId.make("codex_missing");
+      const launchAgent = vi.fn(() => Effect.die("must not launch"));
+      const snapshot = {
+        threadId: "thread-agent-missing",
+        terminalId: "term-1",
+        cwd: "/tmp/project",
+        worktreePath: null,
+        status: "running" as const,
+        pid: 1234,
+        history: "",
+        exitCode: null,
+        exitSignal: null,
+        label: "Terminal 1",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+
+      yield* buildAppUnderTest({
+        layers: {
+          providerRegistry: {
+            getTerminalLaunchTarget: () =>
+              Effect.succeed({
+                enabled: true,
+                displayName: "Missing Codex",
+                driverKind: ProviderDriverKind.make("codex"),
+                terminalLaunch: {
+                  command: "/definitely/missing/t3-codex",
+                  args: [],
+                  environment: {},
+                  displayName: "Missing Codex",
+                },
+              }),
+          },
+          terminalManager: {
+            open: () => Effect.succeed(snapshot),
+            launchAgent,
+            recordAgentLaunch: (input) =>
+              Effect.succeed({ ...snapshot, agentLaunch: input.result }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const opened = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.terminalOpen]({
+            threadId: "thread-agent-missing",
+            terminalId: "term-1",
+            cwd: "/tmp/project",
+            agentLaunch: { providerInstanceId },
+          }),
+        ),
+      );
+
+      assert.equal(opened.status, "running");
+      assert.equal(opened.agentLaunch?.status, "failed");
+      assert.match(opened.agentLaunch?.message ?? "", /not found/);
+      assert.equal(launchAgent.mock.calls.length, 0);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

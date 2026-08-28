@@ -16,8 +16,16 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 import type { ProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
+import type { ProviderTerminalLaunchSpecification } from "../ProviderDriver.ts";
 
 export type ProviderMaintenanceActionKind = "update";
+
+export interface ProviderTerminalLaunchTarget {
+  readonly enabled: boolean;
+  readonly displayName: string | undefined;
+  readonly driverKind: ProviderDriverKind;
+  readonly terminalLaunch: ProviderTerminalLaunchSpecification | undefined;
+}
 
 export interface ProviderRegistryShape {
   /**
@@ -26,6 +34,11 @@ export interface ProviderRegistryShape {
    * instances of the same driver) and disambiguate via `instanceId`.
    */
   readonly getProviders: Effect.Effect<ReadonlyArray<ServerProvider>>;
+
+  /** Resolve trusted terminal launch data without exposing it on the wire. */
+  readonly getTerminalLaunchTarget: (
+    instanceId: ProviderInstanceId,
+  ) => Effect.Effect<ProviderTerminalLaunchTarget | undefined>;
 
   /**
    * Refresh all providers, or the default instance of the specified

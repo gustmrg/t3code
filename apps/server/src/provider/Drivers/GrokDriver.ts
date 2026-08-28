@@ -26,7 +26,10 @@ import {
   type ProviderInstance,
 } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
-import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import {
+  mergeProviderInstanceEnvironment,
+  providerInstanceEnvironmentOverrides,
+} from "../ProviderInstanceEnvironment.ts";
 import {
   makeManualOnlyProviderMaintenanceCapabilities,
   makeStaticProviderMaintenanceResolver,
@@ -159,6 +162,12 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
         snapshot,
         adapter,
         textGeneration,
+        terminalLaunch: {
+          command: effectiveConfig.binaryPath,
+          args: [],
+          environment: providerInstanceEnvironmentOverrides(environment),
+          displayName: displayName ?? "Grok",
+        },
       } satisfies ProviderInstance;
     }),
 };

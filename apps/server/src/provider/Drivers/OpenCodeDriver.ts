@@ -40,7 +40,10 @@ import {
   type ProviderInstance,
 } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
-import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import {
+  mergeProviderInstanceEnvironment,
+  providerInstanceEnvironmentOverrides,
+} from "../ProviderInstanceEnvironment.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   makePackageManagedProviderMaintenanceResolver,
@@ -189,6 +192,12 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         snapshot,
         adapter,
         textGeneration,
+        terminalLaunch: {
+          command: effectiveConfig.binaryPath,
+          args: [],
+          environment: providerInstanceEnvironmentOverrides(environment),
+          displayName: displayName ?? "OpenCode",
+        },
       } satisfies ProviderInstance;
     }),
 };

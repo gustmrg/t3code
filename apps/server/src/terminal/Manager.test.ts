@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   DEFAULT_TERMINAL_ID,
+  ProviderInstanceId,
   type TerminalAttachStreamEvent,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
@@ -539,6 +540,70 @@ it.layer(
 
       expect(process.writes).toEqual(["ls\n"]);
       expect(process.resizeCalls).toEqual([{ cols: 120, rows: 30 }]);
+    }),
+  );
+
+  it.effect("starts a trusted provider command after the shell is running", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      const snapshot = yield* manager.launchAgent({
+        threadId: "thread-1",
+        terminalId: DEFAULT_TERMINAL_ID,
+        providerInstanceId: ProviderInstanceId.make("codex_work"),
+        displayName: "Codex Work",
+        command: "/opt/Codex Work/bin/codex",
+        args: ["--enable", "safe feature"],
+      });
+
+      expect(process.writes).toEqual(["'/opt/Codex Work/bin/codex' '--enable' 'safe feature'\r"]);
+      expect(snapshot.agentLaunch).toMatchObject({
+        providerInstanceId: "codex_work",
+        displayName: "Codex Work",
+        status: "started",
+      });
+      expect(snapshot.label).toBe("Codex Work");
+    }).pipe(Effect.provide(withHostPlatform("linux"))),
+  );
+
+  it.effect("keeps the shell running when the provider command cannot be written", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+      process.writeFailure = new Error("write failed");
+
+      const error = yield* Effect.flip(
+        manager.launchAgent({
+          threadId: "thread-1",
+          terminalId: DEFAULT_TERMINAL_ID,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          displayName: "Codex",
+          command: "codex",
+          args: [],
+        }),
+      );
+      expect(error._tag).toBe("TerminalWriteError");
+      expect(process.killed).toBe(false);
+
+      const snapshot = yield* manager.recordAgentLaunch({
+        threadId: "thread-1",
+        terminalId: DEFAULT_TERMINAL_ID,
+        result: {
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          displayName: "Codex",
+          status: "failed",
+          message: "Codex could not be started.",
+        },
+      });
+      expect(snapshot.status).toBe("running");
+      expect(snapshot.agentLaunch?.status).toBe("failed");
     }),
   );
 

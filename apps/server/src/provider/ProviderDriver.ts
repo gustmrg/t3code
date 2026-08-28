@@ -2,8 +2,8 @@
  * ProviderDriver / ProviderInstance — driver SPI as plain values.
  *
  * `ProviderDriver` is a record, not a Context.Service. The thing it produces
- * (`ProviderInstance`) is also a record — three captured closures
- * (`snapshot`, `adapter`, `textGeneration`), an id, and a driver kind. There
+ * (`ProviderInstance`) is also a record — captured runtime closures plus
+ * trusted terminal-launch metadata, an id, and a driver kind. There
  * are intentionally no per-driver Context tags because tags are
  * singleton-per-runtime and we need many instances of the same driver.
  *
@@ -56,7 +56,7 @@ export interface ProviderDriverMetadata {
  * One materialized provider instance. Held by the registry, looked up by
  * `instanceId`, torn down by closing the scope it was created in.
  *
- * The three "shape" fields are captured closures owned by this instance —
+ * The runtime "shape" fields are captured closures owned by this instance —
  * stopping one instance cannot affect another, and starting a second
  * instance of the same driver does not reach into the first instance's
  * state.
@@ -71,6 +71,15 @@ export interface ProviderInstance {
   readonly snapshot: ServerProviderShape;
   readonly adapter: ProviderAdapterShape<ProviderAdapterError>;
   readonly textGeneration: TextGeneration.TextGeneration["Service"];
+  /** Trusted interactive CLI launch data. Never serialized to clients. */
+  readonly terminalLaunch?: ProviderTerminalLaunchSpecification;
+}
+
+export interface ProviderTerminalLaunchSpecification {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly displayName: string;
 }
 
 export interface ProviderContinuationIdentity {

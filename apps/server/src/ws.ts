@@ -65,6 +65,7 @@ import {
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { isCommandAvailable } from "@t3tools/shared/shell";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
@@ -529,6 +530,98 @@ const makeWsRpcLayer = (
           message: `The authenticated token is missing required scope: ${requiredScope}.`,
           requiredScope,
         });
+
+      const openTerminal = Effect.fn("ws.openTerminal")(function* (
+        input: Parameters<TerminalManager.TerminalManager["Service"]["open"]>[0],
+      ) {
+        const launchIntent = input.agentLaunch;
+        if (!launchIntent) {
+          return yield* terminalManager.open(input);
+        }
+
+        const instance = yield* providerRegistry.getTerminalLaunchTarget(
+          launchIntent.providerInstanceId,
+        );
+        const launch = instance?.enabled ? instance.terminalLaunch : undefined;
+        const launchEnvironment = launch
+          ? Object.fromEntries(
+              Object.entries(launch.environment).filter(
+                (entry): entry is [string, string] => entry[1] !== undefined,
+              ),
+            )
+          : {};
+        const opened = yield* terminalManager.open({
+          ...input,
+          env: { ...input.env, ...launchEnvironment },
+        });
+
+        const recordLaunchResult = (result: NonNullable<typeof opened.agentLaunch>) =>
+          terminalManager
+            .recordAgentLaunch({
+              threadId: input.threadId,
+              terminalId: input.terminalId,
+              result,
+            })
+            .pipe(Effect.orElseSucceed(() => ({ ...opened, agentLaunch: result })));
+
+        if (!instance) {
+          return yield* recordLaunchResult({
+            providerInstanceId: launchIntent.providerInstanceId,
+            displayName: launchIntent.providerInstanceId,
+            status: "unavailable",
+            message: "The configured provider instance is unavailable.",
+          });
+        }
+        const displayName = launch?.displayName ?? instance.displayName ?? instance.driverKind;
+        if (!instance.enabled) {
+          return yield* recordLaunchResult({
+            providerInstanceId: launchIntent.providerInstanceId,
+            displayName,
+            status: "unavailable",
+            message: "The configured provider instance is disabled.",
+          });
+        }
+        if (!launch) {
+          return yield* recordLaunchResult({
+            providerInstanceId: launchIntent.providerInstanceId,
+            displayName,
+            status: "unavailable",
+            message: "This provider does not support launching its CLI in a terminal.",
+          });
+        }
+
+        const commandAvailable = yield* isCommandAvailable(launch.command, {
+          env: { ...process.env, ...input.env, ...launchEnvironment },
+        });
+        if (!commandAvailable) {
+          return yield* recordLaunchResult({
+            providerInstanceId: launchIntent.providerInstanceId,
+            displayName,
+            status: "failed",
+            message: `Provider command ${launch.command} was not found.`,
+          });
+        }
+
+        return yield* terminalManager
+          .launchAgent({
+            threadId: input.threadId,
+            terminalId: input.terminalId,
+            providerInstanceId: launchIntent.providerInstanceId,
+            displayName,
+            command: launch.command,
+            args: launch.args,
+          })
+          .pipe(
+            Effect.catch((error) =>
+              recordLaunchResult({
+                providerInstanceId: launchIntent.providerInstanceId,
+                displayName,
+                status: "failed",
+                message: error.message,
+              }),
+            ),
+          );
+      });
       const authorizeEffect = <A, E, R>(
         requiredScope: AuthEnvironmentScope,
         effect: Effect.Effect<A, E, R>,
@@ -2235,7 +2328,7 @@ const makeWsRpcLayer = (
             { "rpc.aggregate": "review" },
           ),
         [WS_METHODS.terminalOpen]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalOpen, terminalManager.open(input), {
+          observeRpcEffect(WS_METHODS.terminalOpen, openTerminal(input), {
             "rpc.aggregate": "terminal",
           }),
         [WS_METHODS.terminalAttach]: (input) =>

@@ -39,7 +39,10 @@ import {
   type ProviderInstance,
 } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
-import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import {
+  mergeProviderInstanceEnvironment,
+  providerInstanceEnvironmentOverrides,
+} from "../ProviderInstanceEnvironment.ts";
 import {
   makeProviderMaintenanceCapabilities,
   type ProviderMaintenanceCapabilitiesResolver,
@@ -183,6 +186,12 @@ export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
         snapshot,
         adapter,
         textGeneration,
+        terminalLaunch: {
+          command: effectiveConfig.binaryPath,
+          args: effectiveConfig.apiEndpoint ? ["-e", effectiveConfig.apiEndpoint] : [],
+          environment: providerInstanceEnvironmentOverrides(environment),
+          displayName: displayName ?? "Cursor",
+        },
       } satisfies ProviderInstance;
     }),
 };

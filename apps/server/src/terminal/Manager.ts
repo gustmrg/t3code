@@ -19,6 +19,7 @@ import {
   TerminalSessionLookupError,
   TerminalWriteError,
   type TerminalAttachInput,
+  type TerminalAgentLaunchResult,
   type TerminalAttachStreamEvent,
   type TerminalClearInput,
   type TerminalCloseInput,
@@ -31,6 +32,7 @@ import {
   type TerminalSessionStatus,
   type TerminalSummary,
   type TerminalWriteInput,
+  type ProviderInstanceId,
 } from "@t3tools/contracts";
 import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -136,6 +138,16 @@ export class TerminalManager extends Context.Service<
       input: TerminalOpenInput,
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
+    /** Record a trusted provider launch outcome on an already-open shell. */
+    readonly recordAgentLaunch: (
+      input: TerminalAgentLaunchRecordInput,
+    ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
+
+    /** Start a server-resolved provider CLI inside an already-open shell. */
+    readonly launchAgent: (
+      input: TerminalAgentStartInput,
+    ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
+
     /**
      * Attach to a terminal and stream its initial snapshot followed by live events.
      *
@@ -238,6 +250,21 @@ export interface TerminalStartInput extends TerminalOpenInput {
   rows: number;
 }
 
+export interface TerminalAgentLaunchRecordInput {
+  readonly threadId: string;
+  readonly terminalId: string;
+  readonly result: TerminalAgentLaunchResult;
+}
+
+export interface TerminalAgentStartInput {
+  readonly threadId: string;
+  readonly terminalId: string;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly displayName: string;
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+}
+
 export interface TerminalSessionState {
   threadId: string;
   terminalId: string;
@@ -262,6 +289,8 @@ export interface TerminalSessionState {
   hasRunningSubprocess: boolean;
   /** Normalized child command name when `hasRunningSubprocess`; cleared when idle. */
   childCommandLabel: string | null;
+  shellCommand: string | null;
+  agentLaunch: TerminalAgentLaunchResult | null;
   runtimeEnv: Record<string, string> | null;
 }
 
@@ -323,6 +352,9 @@ function normalizeChildCommandName(raw: string, platform: NodeJS.Platform): stri
 }
 
 function terminalWireLabel(session: TerminalSessionState): string {
+  if (session.agentLaunch?.status === "started") {
+    return truncateTerminalWireLabel(session.agentLaunch.displayName);
+  }
   if (session.hasRunningSubprocess && session.childCommandLabel) {
     const trimmed = session.childCommandLabel.trim();
     if (trimmed.length > 0) {
@@ -344,6 +376,7 @@ function snapshot(session: TerminalSessionState): TerminalSessionSnapshot {
     exitCode: session.exitCode,
     exitSignal: session.exitSignal,
     label: terminalWireLabel(session),
+    ...(session.agentLaunch ? { agentLaunch: session.agentLaunch } : {}),
     updatedAt: session.updatedAt,
     sequence: session.eventSequence,
   };
@@ -361,8 +394,38 @@ function summary(session: TerminalSessionState): TerminalSummary {
     exitSignal: session.exitSignal,
     hasRunningSubprocess: session.hasRunningSubprocess,
     label: terminalWireLabel(session),
+    ...(session.agentLaunch ? { agentLaunch: session.agentLaunch } : {}),
     updatedAt: session.updatedAt,
   };
+}
+
+function quotePosixShellArgument(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function quotePowerShellArgument(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function quoteCmdArgument(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+function formatAgentCommandLine(input: {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  readonly shellCommand: string | null;
+  readonly platform: NodeJS.Platform;
+}): string {
+  if (input.platform !== "win32") {
+    return [input.command, ...input.args].map(quotePosixShellArgument).join(" ");
+  }
+
+  const shellName = basenameForPlatform(input.shellCommand ?? "", input.platform).toLowerCase();
+  if (shellName === "pwsh.exe" || shellName === "powershell.exe") {
+    return `& ${[input.command, ...input.args].map(quotePowerShellArgument).join(" ")}`;
+  }
+  return [input.command, ...input.args].map(quoteCmdArgument).join(" ");
 }
 
 function shouldPublishTerminalMetadataEvent(event: TerminalEvent): boolean {
@@ -1684,6 +1747,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         session.pid = null;
         session.hasRunningSubprocess = false;
         session.childCommandLabel = null;
+        session.shellCommand = null;
+        session.agentLaunch = null;
         session.status = "exited";
         session.pendingHistoryControlSequence = "";
         session.pendingProcessEvents = [];
@@ -1756,6 +1821,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session.pid = null;
       session.hasRunningSubprocess = false;
       session.childCommandLabel = null;
+      session.shellCommand = null;
+      session.agentLaunch = null;
       session.status = "exited";
       session.pendingHistoryControlSequence = "";
       session.pendingProcessEvents = [];
@@ -1781,7 +1848,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     index = 0,
     lastError: PtyAdapter.PtySpawnError | null = null,
   ): Effect.fn.Return<
-    { process: PtyAdapter.PtyProcess; shellLabel: string },
+    { process: PtyAdapter.PtyProcess; shellCommand: string; shellLabel: string },
     PtyAdapter.PtySpawnError
   > {
     if (index >= shellCandidates.length) {
@@ -1817,6 +1884,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     if (attempt._tag === "Success") {
       return {
         process: attempt.success,
+        shellCommand: candidate.shell,
         shellLabel: formatShellCandidate(candidate),
       };
     }
@@ -1853,6 +1921,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session.exitSignal = null;
       session.hasRunningSubprocess = false;
       session.childCommandLabel = null;
+      session.shellCommand = null;
+      session.agentLaunch = null;
       session.pendingProcessEvents = [];
       session.pendingProcessEventIndex = 0;
       session.processEventDrainRunning = false;
@@ -1897,6 +1967,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               session.status = "running";
               session.unsubscribeData = unsubscribeData;
               session.unsubscribeExit = unsubscribeExit;
+              session.shellCommand = spawnResult.shellCommand;
               eventStamp = advanceEventSequence(session);
               return [undefined, state] as const;
             });
@@ -1930,6 +2001,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         session.process = null;
         session.hasRunningSubprocess = false;
         session.childCommandLabel = null;
+        session.shellCommand = null;
+        session.agentLaunch = null;
         session.pendingProcessEvents = [];
         session.pendingProcessEventIndex = 0;
         session.processEventDrainRunning = false;
@@ -2176,6 +2249,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         unsubscribeExit: null,
         hasRunningSubprocess: false,
         childCommandLabel: null,
+        shellCommand: null,
+        agentLaunch: null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
       };
 
@@ -2267,6 +2342,66 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   const open: TerminalManager["Service"]["open"] = (input) =>
     withThreadLock(input.threadId, openLocked(input));
+
+  const recordAgentLaunchLocked = Effect.fn("terminal.recordAgentLaunchLocked")(function* (
+    input: TerminalAgentLaunchRecordInput,
+  ) {
+    const session = yield* requireSession(input.threadId, input.terminalId);
+    session.agentLaunch = input.result;
+    const eventStamp = advanceEventSequence(session);
+    yield* publishEvent({
+      type: "activity",
+      threadId: session.threadId,
+      terminalId: session.terminalId,
+      sequence: eventStamp.sequence,
+      hasRunningSubprocess: session.hasRunningSubprocess,
+      label: terminalWireLabel(session),
+    });
+    return snapshot(session);
+  });
+
+  const recordAgentLaunch: TerminalManager["Service"]["recordAgentLaunch"] = (input) =>
+    withThreadLock(input.threadId, recordAgentLaunchLocked(input));
+
+  const launchAgent: TerminalManager["Service"]["launchAgent"] = (input) =>
+    withThreadLock(
+      input.threadId,
+      Effect.gen(function* () {
+        const session = yield* requireSession(input.threadId, input.terminalId);
+        const process = session.process;
+        if (!process || session.status !== "running") {
+          return yield* new TerminalNotRunningError({
+            threadId: input.threadId,
+            terminalId: input.terminalId,
+          });
+        }
+        const commandLine = formatAgentCommandLine({
+          command: input.command,
+          args: input.args,
+          shellCommand: session.shellCommand,
+          platform,
+        });
+        yield* Effect.try({
+          try: () => process.write(`${commandLine}\r`),
+          catch: (cause) =>
+            new TerminalWriteError({
+              threadId: input.threadId,
+              terminalId: input.terminalId,
+              terminalPid: process.pid,
+              cause,
+            }),
+        });
+        return yield* recordAgentLaunchLocked({
+          threadId: input.threadId,
+          terminalId: input.terminalId,
+          result: {
+            providerInstanceId: input.providerInstanceId,
+            displayName: input.displayName,
+            status: "started",
+          },
+        });
+      }),
+    );
 
   const openOrAttachForStream = (input: TerminalAttachInput) =>
     withThreadLock(
@@ -2588,6 +2723,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             unsubscribeExit: null,
             hasRunningSubprocess: false,
             childCommandLabel: null,
+            shellCommand: null,
+            agentLaunch: null,
             runtimeEnv: normalizedRuntimeEnv(input.env),
           };
           const createdSession = session;
@@ -2655,6 +2792,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   return TerminalManager.of({
     open,
+    recordAgentLaunch,
+    launchAgent,
     attachStream,
     write,
     resize,

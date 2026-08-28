@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { mergeProviderInstanceEnvironment } from "./ProviderInstanceEnvironment.ts";
+import {
+  mergeProviderInstanceEnvironment,
+  providerInstanceEnvironmentOverrides,
+} from "./ProviderInstanceEnvironment.ts";
 
 describe("mergeProviderInstanceEnvironment", () => {
   it("overrides inherited environment values and preserves empty strings", () => {
@@ -17,5 +20,15 @@ describe("mergeProviderInstanceEnvironment", () => {
       ANTHROPIC_API_KEY: "",
       PATH: "/bin",
     });
+  });
+});
+
+describe("providerInstanceEnvironmentOverrides", () => {
+  it("returns only explicitly configured instance variables", () => {
+    expect(
+      providerInstanceEnvironmentOverrides([
+        { name: "ANTHROPIC_API_KEY", value: "configured", sensitive: true },
+      ]),
+    ).toEqual({ ANTHROPIC_API_KEY: "configured" });
   });
 });

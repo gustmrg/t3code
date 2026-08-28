@@ -36,13 +36,17 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeCodexAdapter } from "../Layers/CodexAdapter.ts";
+import { codexExecLaunchArgs, resolveCodexLaunchArgs } from "../Layers/codexLaunchArgs.ts";
 import { checkCodexProviderStatus, makePendingCodexProvider } from "../Layers/CodexProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import * as ModelManifest from "../ModelManifest.ts";
 import type { ProviderDriver, ProviderInstance } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
-import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import {
+  mergeProviderInstanceEnvironment,
+  providerInstanceEnvironmentOverrides,
+} from "../ProviderInstanceEnvironment.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   makePackageManagedProviderMaintenanceResolver,
@@ -227,6 +231,15 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         snapshot,
         adapter,
         textGeneration,
+        terminalLaunch: {
+          command: effectiveConfig.binaryPath,
+          args: codexExecLaunchArgs(resolveCodexLaunchArgs(config.launchArgs, processEnv)),
+          environment: {
+            ...providerInstanceEnvironmentOverrides(environment),
+            ...(effectiveConfig.homePath ? { CODEX_HOME: effectiveConfig.homePath } : {}),
+          },
+          displayName: displayName ?? "Codex",
+        },
       } satisfies ProviderInstance;
     }),
 };
