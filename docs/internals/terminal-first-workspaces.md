@@ -114,7 +114,11 @@ only rollout files held open under `/proc/<descendant pid>/fd` of the main PTY. 
 `session_meta` identity must match; it never selects the newest file or matches only by cwd. Native
 `turn_context` records supply the model, and `task_started`, `task_complete`, and `turn_aborted` supply
 working/idle transitions. Missing ownership, ambiguous matches and replayed historical state report
-unknown. Reads are incremental and bounded; terminal output and prompts are not parsed or copied.
+unknown. Reads are incremental and bounded; terminal output is not parsed. The first native `user_message` provides a whitespace-normalized title
+limited to 120 characters; the conversation is not imported into structured chat. `task_started` supplies `workingStartedAt`
+from its native timestamp; client clocks do not invent a start time. Both optional metadata fields
+persist in the session sidecar and participate in metadata equality. The client persists the title
+through the normal thread metadata command only while the thread still has the default title.
 
 A `.session.json` sidecar beside terminal history stores the native ID, rollout path and last metadata.
 This is environment-local runtime metadata, separate from the durable workspace binding. Ending the

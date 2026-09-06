@@ -1,3 +1,4 @@
+import { useTerminalThreadTitle } from "../hooks/useTerminalThreadTitle";
 import {
   ArchiveIcon,
   ArrowUpDownIcon,
@@ -87,7 +88,7 @@ import {
   useThreadShellsForProjectRefs,
 } from "../state/entities";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
-import { useThreadRunningTerminalIds } from "../state/terminalSessions";
+import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
 import { openDiscoveredPort } from "./preview/openDiscoveredPort";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -382,6 +383,17 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     environmentId: thread.environmentId,
     threadId: thread.id,
   });
+  const terminalSessions = useKnownTerminalSessions({
+    environmentId: thread.terminalWorkspace ? thread.environmentId : null,
+    threadId: thread.id,
+  });
+  useTerminalThreadTitle(
+    threadRef,
+    thread.title,
+    terminalSessions.find(
+      (session) => session.target.terminalId === thread.terminalWorkspace?.mainTerminalId,
+    )?.state.summary,
+  );
   const isMobile = useIsMobile();
   const discoveredPorts = useThreadDiscoveredPorts({
     environmentId: thread.environmentId,

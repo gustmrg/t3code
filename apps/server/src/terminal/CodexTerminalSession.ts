@@ -1,3 +1,4 @@
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -7,12 +8,15 @@ import * as Option from "effect/Option";
 import { TerminalAgentSession } from "@t3tools/contracts";
 
 const RecordLine = Schema.Struct({
+  timestamp: Schema.optionalKey(Schema.String),
   type: Schema.String,
   payload: Schema.Struct({
     type: Schema.optionalKey(Schema.String),
     id: Schema.optionalKey(Schema.String),
     source: Schema.optionalKey(Schema.Unknown),
     model: Schema.optionalKey(Schema.String),
+    message: Schema.optionalKey(Schema.String),
+    started_at: Schema.optionalKey(Schema.String),
   }),
 });
 const decodeLine = Schema.decodeUnknownOption(Schema.fromJsonString(RecordLine));
@@ -33,7 +37,9 @@ export function sameAgentSession(
     left?.provider === right?.provider &&
     left?.sessionId === right?.sessionId &&
     left?.model === right?.model &&
-    left?.state === right?.state
+    left?.state === right?.state &&
+    left?.title === right?.title &&
+    left?.workingStartedAt === right?.workingStartedAt
   );
 }
 
@@ -44,14 +50,30 @@ export function reduceCodexTerminalRecord(
 ): TerminalAgentSession {
   const decoded = decodeLine(line);
   if (Option.isNone(decoded)) return session;
-  const { type, payload } = decoded.value;
+  const { type, payload, timestamp } = decoded.value;
   if (type === "turn_context" && payload.model && payload.model.length <= 256) {
     return { ...session, model: payload.model };
   }
   if (type !== "event_msg") return session;
   switch (payload.type) {
-    case "task_started":
-      return { ...session, state: "working" };
+    case "user_message": {
+      if (session.title || !payload.message?.trim()) return session;
+      const title = payload.message.trim().replace(/\s+/g, " ").slice(0, 120);
+      return { ...session, title };
+    }
+    case "task_started": {
+      const timestampValue = payload.started_at ?? timestamp;
+      const startedAt = timestampValue ? DateTime.make(timestampValue) : Option.none();
+      const next = { ...session };
+      delete next.workingStartedAt;
+      return {
+        ...next,
+        state: "working",
+        ...(Option.isSome(startedAt)
+          ? { workingStartedAt: DateTime.formatIso(startedAt.value) }
+          : {}),
+      };
+    }
     case "task_complete":
     case "turn_aborted":
       return { ...session, state: "idle" };

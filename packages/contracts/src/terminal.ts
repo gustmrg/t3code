@@ -59,6 +59,8 @@ export const TerminalAgentSession = Schema.Struct({
   sessionId: TrimmedNonEmptyStringSchema,
   model: Schema.NullOr(TrimmedNonEmptyStringSchema),
   state: Schema.Literals(["unknown", "working", "idle", "stopped"]),
+  title: Schema.optional(Schema.String.check(Schema.isMaxLength(120))),
+  workingStartedAt: Schema.optional(Schema.String),
 });
 export type TerminalAgentSession = typeof TerminalAgentSession.Type;
 

@@ -32,6 +32,10 @@ The right panel button shows and hides tools independently of the terminal and d
 
 For Codex on a Linux environment, the sidebar reads the native session associated with the main
 terminal process to show its model and **Working**, **Idle**, **Stopped** or **Unknown** state.
+For a verified Codex session, an unnamed thread takes a short title from the first request. Manually
+renamed threads keep their names. **Working** includes elapsed time from the native turn start;
+changing threads or reconnecting does not reset it. These details currently require Codex on Linux.
+
 This requires no hooks. Missing information appears as **Model unavailable** or **Unknown**;
 silence in the terminal is not treated as evidence that the agent is idle. Other providers currently
 use process or startup metadata for their icon, without verified model or agent state.

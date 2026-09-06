@@ -148,6 +148,33 @@ it.layer(NodeServices.layer)("Codex terminal session observation", (it) => {
       expect(yield* restored.resume(storage)).not.toBeNull();
     }),
   );
+  it.effect("persists title and start time without replaying a stale working status", () =>
+    Effect.gen(function* () {
+      const { fs, rollout, storage } = yield* fixture();
+      yield* fs.writeFileString(
+        rollout,
+        meta() +
+          encodeLine({
+            timestamp: "2026-09-06T10:00:00Z",
+            type: "event_msg",
+            payload: { type: "task_started" },
+          }) +
+          "\n" +
+          line("event_msg", { type: "user_message", message: "Repair the panels" }),
+      );
+      const tracker = yield* makeCodexTerminalSessions(() => Effect.succeed([rollout]));
+      expect(yield* tracker.observe(storage, [1])).toMatchObject({
+        title: "Repair the panels",
+        workingStartedAt: "2026-09-06T10:00:00.000Z",
+        state: "working",
+      });
+      const restored = yield* makeCodexTerminalSessions(() => Effect.succeed([rollout]));
+      expect(yield* restored.observe(storage, [1])).toMatchObject({
+        title: "Repair the panels",
+        state: "unknown",
+      });
+    }),
+  );
   it.effect("resumes an exact ID with the observed model and refuses nested resume commands", () =>
     Effect.sync(() => {
       expect(
@@ -160,4 +187,47 @@ it.layer(NodeServices.layer)("Codex terminal session observation", (it) => {
       expect(() => codexResumeArgs([], { ...native, sessionId: "--last" })).toThrow();
     }),
   );
+});
+
+it("derives a bounded title and authoritative work start without reading terminal output", () => {
+  const started = reduceCodexTerminalRecord(
+    native,
+    JSON.stringify({
+      timestamp: "2026-09-06T10:00:00Z",
+      type: "event_msg",
+      payload: { type: "task_started", started_at: "2026-09-06T09:59:59Z" },
+    }),
+  );
+  expect(started.workingStartedAt).toBe("2026-09-06T09:59:59.000Z");
+  const named = reduceCodexTerminalRecord(
+    started,
+    line("event_msg", {
+      type: "user_message",
+      message: "  Fix   terminal controls\n on desktop  ",
+    }),
+  );
+  expect(named.title).toBe("Fix terminal controls on desktop");
+  expect(
+    reduceCodexTerminalRecord(
+      named,
+      line("event_msg", { type: "user_message", message: "another request" }),
+    ).title,
+  ).toBe(named.title);
+  const idle = reduceCodexTerminalRecord(named, event("task_complete"));
+  expect(idle.state).toBe("idle");
+  const next = reduceCodexTerminalRecord(
+    idle,
+    JSON.stringify({
+      timestamp: "2026-09-06T10:01:00Z",
+      type: "event_msg",
+      payload: { type: "task_started" },
+    }),
+  );
+  expect(next.workingStartedAt).toBe("2026-09-06T10:01:00.000Z");
+  expect(
+    reduceCodexTerminalRecord(
+      native,
+      line("event_msg", { type: "user_message", message: "x".repeat(500) }),
+    ).title,
+  ).toHaveLength(120);
 });

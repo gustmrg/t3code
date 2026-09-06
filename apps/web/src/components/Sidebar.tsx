@@ -1,3 +1,4 @@
+import { useTerminalThreadTitle } from "../hooks/useTerminalThreadTitle";
 import { autoAnimate } from "@formkit/auto-animate";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
@@ -838,6 +839,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const mainTerminalSummary = terminalSessions.find(
     (session) => session.target.terminalId === thread.terminalWorkspace?.mainTerminalId,
   )?.state.summary;
+  useTerminalThreadTitle(threadRef, thread.title, mainTerminalSummary);
   const nativeTerminalState =
     mainTerminalSummary?.agentSession?.state ??
     (mainTerminalSummary?.status === "exited" ? "stopped" : "unknown");
@@ -1534,7 +1536,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         <span role="status">{topStatus.label}</span>
                         {status === "working" ? (
                           <span aria-hidden>
-                            <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
+                            <WorkingDuration
+                              startedAt={
+                                thread.terminalWorkspace
+                                  ? (mainTerminalSummary?.agentSession?.workingStartedAt ?? null)
+                                  : resolveWorkingStartedAt(thread)
+                              }
+                            />
                           </span>
                         ) : null}
                       </span>

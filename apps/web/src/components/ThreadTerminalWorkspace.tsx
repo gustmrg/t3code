@@ -21,6 +21,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useThreadShell, useProject } from "../state/entities";
 import { useKnownTerminalSessions } from "../state/terminalSessions";
 import { useAtomCommand } from "../state/use-atom-command";
+import { useTerminalThreadTitle } from "../hooks/useTerminalThreadTitle";
 import { terminalEnvironment } from "../state/terminal";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "../state/server";
 import {
@@ -323,35 +324,48 @@ export function ThreadTerminalWorkspace({
     ? resolveTerminalSessionLabel(binding.mainTerminalId, summary)
     : "Main terminal";
 
+  const title = useTerminalThreadTitle(threadRef, shell?.title ?? "New thread", summary);
+  const panelControls = (
+    <div
+      className="absolute right-[var(--workspace-controls-right)] top-[var(--workspace-controls-top)] z-50 flex h-[var(--workspace-topbar-height)] items-center [-webkit-app-region:no-drag]"
+      data-workspace-titlebar-controls
+    >
+      {panel.isOpen && !sheet ? (
+        <RightPanelMaximizeControl
+          maximized={maximized}
+          onToggle={() => useRightPanelStore.getState().toggleMaximized(threadRef)}
+        />
+      ) : null}
+      <PanelLayoutControls
+        terminalAvailable={!!project}
+        terminalOpen={drawer.terminalOpen}
+        terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
+        rightPanelAvailable={!!project}
+        rightPanelOpen={panel.isOpen}
+        rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
+        liveAgentCount={0}
+        onToggleTerminal={toggleDrawer}
+        onToggleRightPanel={togglePanel}
+      />
+    </div>
+  );
+  const inlineToolsOpen = panel.isOpen && !sheet;
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="absolute right-[var(--workspace-controls-right)] top-0 z-50 flex h-[var(--workspace-topbar-height)] items-center no-drag">
-        {panel.isOpen && !sheet ? (
-          <RightPanelMaximizeControl
-            maximized={maximized}
-            onToggle={() => useRightPanelStore.getState().toggleMaximized(threadRef)}
-          />
-        ) : null}
-        <PanelLayoutControls
-          terminalAvailable={!!project}
-          terminalOpen={drawer.terminalOpen}
-          terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
-          rightPanelAvailable={!!project}
-          rightPanelOpen={panel.isOpen}
-          rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
-          liveAgentCount={0}
-          onToggleTerminal={toggleDrawer}
-          onToggleRightPanel={togglePanel}
-        />
-      </div>
+      {inlineToolsOpen ? panelControls : null}
       <div className="relative flex min-h-0 flex-1">
         <div
           className={mainHidden ? "hidden" : "flex min-h-0 min-w-0 flex-1 flex-col"}
           data-terminal-owner="main"
         >
-          <WorkspacePageHeader electron={isElectron} className="border-b border-border pr-36">
+          <WorkspacePageHeader
+            electron={isElectron}
+            reserveNativeControls={!inlineToolsOpen}
+            className="relative border-b border-border pr-36"
+          >
+            {!inlineToolsOpen ? panelControls : null}
             <span className="truncate text-sm">
-              {shell?.title ?? "Terminal"} · {label}
+              {title} · {label}
             </span>
             <Button variant="ghost" size="sm" className="no-drag" onClick={() => void endSession()}>
               End session
