@@ -1,12 +1,9 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
-  applyThemeColorPreview,
-  applyThemePalette,
   getThemeColorsForMode,
   getThemeDefinition,
   getThemeModes,
-  getThemePreviewSidebarArtwork,
   getThemePreferenceMode,
   isKnownThemePreference,
   getCustomThemes,
@@ -18,9 +15,8 @@ import {
   resolveDesktopTheme,
   resolveThemeAppearance,
   serializeThemeFile,
-  subscribeToThemePreview,
   subscribeToCustomThemes,
-  T3_CHAT_THEME,
+  GUSTY_CODE_THEME,
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
@@ -69,7 +65,7 @@ describe("theme files", () => {
     expect(dark.secondaryLabel).toBe(dark.textMuted);
     expect(contrastRatio(light.accentForeground, light.accent)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(dark.accentForeground, dark.accent)).toBeGreaterThanOrEqual(4.5);
-    // Status colors fall back to T3 Code's standard red and amber rather than
+    // Status colors fall back to Gusty Code's standard red and amber rather than
     // the flagship palette's, so no generated theme inherits a brand tint.
     const channels = (value: string) =>
       [1, 3, 5].map((index) => Number.parseInt(value.slice(index, index + 2), 16)) as [
@@ -169,7 +165,7 @@ describe("theme files", () => {
       colors: {
         canvas: "#07152f",
         accent: "#67c2ff",
-        placeholder: "#8f8699",
+        placeholder: "#94a3b8",
       },
     });
   });
@@ -195,11 +191,11 @@ describe("theme files", () => {
   });
 
   it("serializes a theme back into the importable file shape", () => {
-    const serialized = serializeThemeFile(T3_CHAT_THEME);
+    const serialized = serializeThemeFile(GUSTY_CODE_THEME);
     expect(JSON.parse(serialized)).toMatchObject({
       version: THEME_FILE_VERSION,
-      id: T3_CHAT_THEME.id,
-      name: T3_CHAT_THEME.label,
+      id: GUSTY_CODE_THEME.id,
+      name: GUSTY_CODE_THEME.label,
       appearance: "light",
     });
   });
@@ -224,29 +220,6 @@ describe("theme files", () => {
     expect(JSON.parse(serializeThemeFile(withArtwork)).sidebarArtwork).toBe(true);
   });
 
-  it("publishes sidebar artwork changes from the live theme preview", () => {
-    const listener = vi.fn();
-    const unsubscribe = subscribeToThemePreview(listener);
-    vi.stubGlobal("document", {
-      documentElement: {
-        classList: { toggle: vi.fn() },
-        dataset: {},
-        style: { removeProperty: vi.fn(), setProperty: vi.fn() },
-      },
-    });
-
-    applyThemeColorPreview(T3_CHAT_THEME.colors, "light", true);
-    expect(getThemePreviewSidebarArtwork()).toBe(true);
-    expect(listener).toHaveBeenCalledTimes(1);
-
-    applyThemePalette("system");
-    expect(getThemePreviewSidebarArtwork()).toBeNull();
-    expect(listener).toHaveBeenCalledTimes(2);
-
-    unsubscribe();
-    vi.unstubAllGlobals();
-  });
-
   it("keeps optional light and dark palettes under one theme id", () => {
     const theme = parseThemeFile({
       version: THEME_FILE_VERSION,
@@ -264,48 +237,43 @@ describe("theme files", () => {
       canvas: "#101827",
       text: "#eef5ff",
     });
-    expect(getThemeModes(T3_CHAT_THEME)).toEqual(["light", "dark"]);
-    expect(resolveThemeAppearance(T3_CHAT_THEME.id, true, true)).toBe("dark");
-    expect(resolveDesktopTheme(T3_CHAT_THEME.id, true)).toBe("system");
-    expect(resolveThemeAppearance(T3_CHAT_THEME.id, false, false, "dark")).toBe("dark");
-    expect(resolveDesktopTheme(T3_CHAT_THEME.id, false, "dark")).toBe("dark");
+    expect(getThemeModes(GUSTY_CODE_THEME)).toEqual(["light", "dark"]);
+    expect(resolveThemeAppearance(GUSTY_CODE_THEME.id, true, true)).toBe("dark");
+    expect(resolveDesktopTheme(GUSTY_CODE_THEME.id, true)).toBe("system");
+    expect(resolveThemeAppearance(GUSTY_CODE_THEME.id, false, false, "dark")).toBe("dark");
+    expect(resolveDesktopTheme(GUSTY_CODE_THEME.id, false, "dark")).toBe("dark");
     expect(JSON.parse(serializeThemeFile(theme)).variants.dark).toMatchObject({
       canvas: "#101827",
       text: "#eef5ff",
     });
   });
 
-  it("keeps the T3 Chat palette faithful and readable", () => {
-    expect(T3_CHAT_THEME.colors).toMatchObject({
-      canvas: "#fdf7fd",
-      chrome: "#fdf7fd",
-      toolbarBorder: "#efbdeb",
-      toolbarControl: "#f3e6f5",
-      toolbarControlHover: "#eccfe3",
-      surfaceRaised: "#fdfafd",
-      input: "#e7c1dc",
-      focus: "#db2777",
-      messageSurface: "#f7def2",
-      codeBackground: "#f5ecf9",
-      codeForeground: "#673c8b",
-      accentSurface: "#f3e6f5",
-      sidebar: "#f2e1f4",
+  it("uses the Gusty design-system colors and readable foregrounds", () => {
+    expect(GUSTY_CODE_THEME.id).toBe("gusty-code");
+    expect(GUSTY_CODE_THEME.label).toBe("Gusty Code");
+    expect(GUSTY_CODE_THEME.colors).toMatchObject({
+      canvas: "#f8fafc",
+      surface: "#ffffff",
+      text: "#0b1020",
+      textMuted: "#475569",
+      accent: "#2563eb",
+      focus: "#2563eb",
+      input: "#64748b",
     });
-    expect(T3_CHAT_THEME.variants?.dark).toMatchObject({
-      canvas: "#1f1a24",
-      chrome: "#1f1a24",
-      surface: "#29232d",
-      surfaceRaised: "#2c2631",
-      input: "#302029",
-      focus: "#db2777",
-      messageSurface: "#2b2431",
-      codeBackground: "#1f1a24",
-      sidebar: "#171018",
-      sidebarBorder: "#322028",
+    expect(GUSTY_CODE_THEME.variants?.dark).toMatchObject({
+      canvas: "#0b1020",
+      surface: "#111a2e",
+      text: "#e5e7eb",
+      textMuted: "#94a3b8",
+      accent: "#2563eb",
+      focus: "#06b6d4",
+      input: "#64748b",
     });
+    expect(getThemeDefinition("t3-chat")).toBe(GUSTY_CODE_THEME);
+    expect(canonicalThemePreference("t3-chat")).toBe("gusty-code");
 
     for (const mode of ["light", "dark"] as const) {
-      const colors = getThemeColorsForMode(T3_CHAT_THEME, mode)!;
+      const colors = getThemeColorsForMode(GUSTY_CODE_THEME, mode)!;
       expect(contrastRatio(colors.text, colors.canvas)).toBeGreaterThanOrEqual(7);
       expect(contrastRatio(colors.textMuted, colors.canvas)).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(colors.messageForeground, colors.messageSurface)).toBeGreaterThanOrEqual(
@@ -315,14 +283,13 @@ describe("theme files", () => {
         4.5,
       );
       expect(contrastRatio(colors.sidebarForeground, colors.sidebar)).toBeGreaterThanOrEqual(4.5);
-      // The live light primary is intended for filled controls and clears the
-      // non-text UI-component threshold rather than normal-text AA.
-      expect(contrastRatio(colors.accentForeground, colors.accent)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(colors.accentForeground, colors.accent)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio("#ffffff", colors.error)).toBeGreaterThanOrEqual(4.5);
     }
   });
 
   it("includes the dual-mode maintainer themes", () => {
-    for (const theme of [T3_CHAT_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
+    for (const theme of [GUSTY_CODE_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
       expect(getThemeDefinition(theme.id)).toBe(theme);
       expect(getThemeModes(theme)).toEqual(["light", "dark"]);
       expect(theme.colors.accent).toMatch(/^#[0-9a-f]{6}$/i);
@@ -333,7 +300,7 @@ describe("theme files", () => {
         expect(colors).not.toBeNull();
         expect(contrastRatio(colors!.text, colors!.canvas)).toBeGreaterThanOrEqual(4.5);
         expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeGreaterThanOrEqual(4.5);
-        if (theme !== T3_CHAT_THEME) {
+        if (theme !== GUSTY_CODE_THEME) {
           expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeLessThan(5.5);
           expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeCloseTo(
             mode === "dark" ? 5.082 : 4.705,
@@ -341,7 +308,7 @@ describe("theme files", () => {
           );
         }
         expect(contrastRatio(colors!.accentForeground, colors!.accent)).toBeGreaterThanOrEqual(
-          theme === T3_CHAT_THEME ? 3 : 4.5,
+          theme === GUSTY_CODE_THEME ? 3 : 4.5,
         );
         expect(
           contrastRatio(colors!.toolbarControlForeground, colors!.toolbarControl),
@@ -351,7 +318,7 @@ describe("theme files", () => {
         ).toBeGreaterThanOrEqual(4.5);
         expect(
           contrastRatio(colors!.messageActionForeground, colors!.messageAction),
-        ).toBeGreaterThanOrEqual(theme === T3_CHAT_THEME ? 3 : 4.5);
+        ).toBeGreaterThanOrEqual(theme === GUSTY_CODE_THEME ? 3 : 4.5);
       }
     }
   });
@@ -491,7 +458,7 @@ describe("stored theme preferences", () => {
   });
 
   it("resolves the legacy t3-chat-dark preference to dark T3 Chat", () => {
-    expect(getThemeDefinition("t3-chat-dark")).toBe(T3_CHAT_THEME);
+    expect(getThemeDefinition("t3-chat-dark")).toBe(GUSTY_CODE_THEME);
     expect(getThemePreferenceMode("t3-chat-dark")).toBe("dark");
     expect(resolveThemeAppearance("t3-chat-dark", true, false)).toBe("dark");
     expect(resolveDesktopTheme("t3-chat-dark", false)).toBe("dark");
@@ -519,7 +486,7 @@ describe("stored theme preferences", () => {
   });
 
   it("recognizes only preferences the runtime can render", () => {
-    for (const preference of ["light", "dark", "system", T3_CHAT_THEME.id, GROVE_THEME.id]) {
+    for (const preference of ["light", "dark", "system", GUSTY_CODE_THEME.id, GROVE_THEME.id]) {
       expect(isKnownThemePreference(preference)).toBe(true);
     }
     expect(isKnownThemePreference(`${GROVE_THEME.id}:dark`)).toBe(false);

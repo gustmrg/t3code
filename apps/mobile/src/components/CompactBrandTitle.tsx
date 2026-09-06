@@ -45,7 +45,7 @@ export function CompactBrandTitle(
   return (
     <View
       aria-level={1}
-      accessibilityLabel="T3 Code, Threads"
+      accessibilityLabel="Gusty Code, Threads"
       accessible
       role="heading"
       style={{
@@ -55,16 +55,16 @@ export function CompactBrandTitle(
         marginLeft: titleOffset,
       }}
     >
-      <T3Wordmark color={iconColor} height={15} />
+      <T3Wordmark color={iconColor} height={24} />
       <Text
         style={{
           color: mutedColor,
-          fontFamily: "DMSans-Medium",
+          fontWeight: "500",
           fontSize: 21,
           letterSpacing: -0.5,
         }}
       >
-        Code
+        Gusty Code
       </Text>
       <View
         style={{
@@ -77,7 +77,7 @@ export function CompactBrandTitle(
         <Text
           style={{
             color: mutedColor,
-            fontFamily: "DMSans-Bold",
+            fontWeight: "700",
             fontSize: 9,
             letterSpacing: 0.9,
             textTransform: "uppercase",

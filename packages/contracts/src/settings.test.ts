@@ -49,21 +49,14 @@ describe("ClientSettings glass opacity", () => {
   });
 });
 
-describe("ClientSettings environment identification", () => {
-  it("defaults to artwork and accepts each presentation mode", () => {
-    expect(decodeClientSettings({}).environmentIdentificationMode).toBe("artwork");
-
-    for (const mode of ["artwork", "pill", "none"] as const) {
-      expect(
-        decodeClientSettingsPatch({ environmentIdentificationMode: mode })
-          .environmentIdentificationMode,
-      ).toBe(mode);
-    }
-  });
-
-  it("rejects unsupported presentation modes", () => {
-    expect(() => decodeClientSettings({ environmentIdentificationMode: "badge" })).toThrow();
-    expect(() => decodeClientSettingsPatch({ environmentIdentificationMode: "badge" })).toThrow();
+describe("removed environment identification preference", () => {
+  it.each(["artwork", "pill", "none"])("ignores the legacy %s preference", (mode) => {
+    expect(decodeClientSettings({ environmentIdentificationMode: mode })).not.toHaveProperty(
+      "environmentIdentificationMode",
+    );
+    expect(decodeClientSettingsPatch({ environmentIdentificationMode: mode })).not.toHaveProperty(
+      "environmentIdentificationMode",
+    );
   });
 });
 

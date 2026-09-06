@@ -546,6 +546,7 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
       },
       heading: {
         fontFamily: boldFontFamily,
+        fontWeight: "700",
         color: markdownStrongColor,
         marginTop: 18,
         marginBottom: 8,

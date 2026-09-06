@@ -8,7 +8,7 @@ import {
   invalidateCustomThemes,
   isKnownThemePreference,
   resolveThemeAppearance,
-  T3_CHAT_THEME,
+  GUSTY_CODE_THEME,
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
@@ -143,6 +143,13 @@ const CHARCOAL_DARK_ONLY = {
 };
 
 describe("index.html boot script", () => {
+  it("keeps the unselected boot shell aligned with the original T3 Code appearance", () => {
+    const lightBody = indexHtml.match(/\n      body \{([^}]+)\}/)?.[1];
+    const darkBody = indexHtml.match(/html\.dark body \{([^}]+)\}/)?.[1];
+    expect(lightBody).toContain("background: #ffffff;");
+    expect(darkBody).toContain("background: #0a0a0a;");
+  });
+
   const parityCases: ReadonlyArray<{
     name: string;
     storage: Record<string, string>;
@@ -256,7 +263,7 @@ describe("index.html boot script", () => {
       storage: { [THEME_STORAGE_KEY]: "t3-chat", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
       prefersDark: true,
     });
-    expect(chat.themeId).toBe("t3-chat");
+    expect(chat.themeId).toBe("gusty-code");
     expect(chat.themeSelected).toBe("true");
     expect(chat.isDark).toBe(true);
 
@@ -279,7 +286,7 @@ describe("index.html boot script", () => {
   // boot script's hand-maintained copy into a CI-enforced contract: any
   // palette change breaks this test until the copy in index.html is updated.
   it("keeps every built-in boot splash in sync with the real palettes", () => {
-    for (const theme of [T3_CHAT_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
+    for (const theme of [GUSTY_CODE_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
       // The boot script resolves every built-in from a light base appearance.
       expect(theme.appearance).toBe("light");
       for (const mode of ["light", "dark"] as const) {
@@ -319,9 +326,9 @@ describe("index.html boot script", () => {
 
     const light = runBootScript({ storage, prefersDark: false });
     expect(light.isDark).toBe(false);
-    expect(light.themeId).toBe("t3-chat");
+    expect(light.themeId).toBe("gusty-code");
     expect(light.bootVariables["--boot-background"]).toBe(
-      getThemeColorsForMode(T3_CHAT_THEME, "light")!.canvas,
+      getThemeColorsForMode(GUSTY_CODE_THEME, "light")!.canvas,
     );
   });
 
@@ -388,7 +395,7 @@ describe("index.html boot script", () => {
       },
       prefersDark: true,
     });
-    expect(boot.themeId).toBe("t3-chat");
+    expect(boot.themeId).toBe("gusty-code");
     expect(boot.isDark).toBe(true);
   });
 
@@ -410,9 +417,9 @@ describe("index.html boot script", () => {
     });
 
     expect(boot.themeId).toBe("partial");
-    expect(boot.bootVariables["--boot-background"]).toBe("#1f1a24");
+    expect(boot.bootVariables["--boot-background"]).toBe("#0b1020");
     expect(boot.bootVariables["--boot-foreground"]).toBe("#fffaff");
-    expect(boot.bootVariables["--boot-accent"]).toBe("#a3004c");
+    expect(boot.bootVariables["--boot-accent"]).toBe("#2563eb");
     expect(boot.backgroundColor).toBe(DEFAULT_DARK_CHROME);
     expect(boot.metaContent).toBe(DEFAULT_DARK_CHROME);
   });

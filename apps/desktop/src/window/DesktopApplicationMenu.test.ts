@@ -30,7 +30,7 @@ const environmentInput = {
 
 const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
   metadata: Effect.die("unexpected metadata read"),
-  name: Effect.succeed("T3 Code"),
+  name: Effect.succeed("T3 Code (Alpha)"),
   whenReady: Effect.void,
   quit: Effect.void,
   exit: () => Effect.void,
@@ -99,6 +99,7 @@ const makeElectronMenuLayer = (
 const configureMenu = (
   selectedAction: Deferred.Deferred<string>,
   applicationMenuTemplate: Deferred.Deferred<readonly Electron.MenuItemConstructorOptions[]>,
+  platform: NodeJS.Platform = "linux",
 ) =>
   Effect.gen(function* () {
     const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
@@ -112,7 +113,7 @@ const configureMenu = (
         Layer.provideMerge(electronDialogLayer),
         Layer.provideMerge(electronAppLayer),
         Layer.provideMerge(
-          DesktopEnvironment.layer(environmentInput).pipe(
+          DesktopEnvironment.layer({ ...environmentInput, platform }).pipe(
             Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
           ),
         ),
@@ -121,6 +122,24 @@ const configureMenu = (
   );
 
 describe("DesktopApplicationMenu", () => {
+  it.effect("uses visible branding for macOS menus while Electron keeps its storage identity", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const captured = yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      yield* configureMenu(selectedAction, captured, "darwin");
+      const template = yield* Deferred.await(captured);
+      const appMenu = template[0]!;
+      assert.equal(appMenu.label, "Gusty Code (Alpha)");
+      if (!Array.isArray(appMenu.submenu)) throw new Error("Expected application submenu");
+      assert.deepEqual(
+        appMenu.submenu
+          .filter((item) => ["about", "hide", "quit"].includes(item.role ?? ""))
+          .map((item) => item.label),
+        ["About Gusty Code (Alpha)", "Hide Gusty Code (Alpha)", "Quit Gusty Code (Alpha)"],
+      );
+    }),
+  );
+
   it.effect("installs the native menu and routes Settings through DesktopWindow", () =>
     Effect.gen(function* () {
       const selectedAction = yield* Deferred.make<string>();

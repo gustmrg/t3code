@@ -35,33 +35,33 @@
         // app colors before React mounts.
         const DEFAULT_THEME_PALETTES = {
           light: {
-            background: "#fdf7fd",
-            foreground: "#501854",
-            accent: "#e33f86",
-            chrome: "#fdf7fd",
+            background: "#f8fafc",
+            foreground: "#0b1020",
+            accent: "#2563eb",
+            chrome: "#f8fafc",
           },
           dark: {
-            background: "#1f1a24",
-            foreground: "#f9f8fb",
-            accent: "#a3004c",
-            chrome: "#1f1a24",
+            background: "#0b1020",
+            foreground: "#e5e7eb",
+            accent: "#2563eb",
+            chrome: "#0b1020",
           },
         };
         // Keep this small boot-time copy in sync with the built-in palettes so
         // the selected theme is visible before the app has mounted.
         const BUILT_IN_THEME_PALETTES = {
-          "t3-chat": {
+          "gusty-code": {
             light: {
-              background: "#fdf7fd",
-              foreground: "#501854",
-              accent: "#e33f86",
-              chrome: "#fdf7fd",
+              background: "#f8fafc",
+              foreground: "#0b1020",
+              accent: "#2563eb",
+              chrome: "#f8fafc",
             },
             dark: {
-              background: "#1f1a24",
-              foreground: "#f9f8fb",
-              accent: "#a3004c",
-              chrome: "#1f1a24",
+              background: "#0b1020",
+              foreground: "#e5e7eb",
+              accent: "#2563eb",
+              chrome: "#0b1020",
             },
           },
           grove: {
@@ -122,7 +122,7 @@
           },
         };
         // Keep the built-in mode list in sync with the runtime so the selected
-        // T3 Chat palette is visible before React has mounted.
+        // Gusty Code palette is visible before React has mounted.
         const BUILT_IN_THEME_MODES = Object.fromEntries(
           Object.entries(BUILT_IN_THEME_PALETTES).map(([id, palettes]) => [
             id,
@@ -133,6 +133,7 @@
           "system",
           "light",
           "dark",
+          "gusty-code",
           "t3-chat",
           "grove",
           "ocean",
@@ -205,7 +206,8 @@
           // and every maintainer theme under a t3- prefix; keep those
           // preferences readable. Mirrors the runtime's legacy alias table.
           const LEGACY_THEME_IDS = {
-            "t3-chat-dark": "t3-chat",
+            "t3-chat-dark": "gusty-code",
+            "t3-chat": "gusty-code",
             "t3-grove": "grove",
             "t3-ocean": "ocean",
             "t3-ember": "ember",
@@ -435,13 +437,13 @@
         object-fit: contain;
       }
     </style>
-    <title>T3 Code (Alpha)</title>
+    <title>Gusty Code (Alpha)</title>
   </head>
   <body>
     <div id="root">
       <div id="boot-shell">
-        <div id="boot-shell-card" aria-label="T3 Code splash screen">
-          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Code" />
+        <div id="boot-shell-card" aria-label="Gusty Code splash screen">
+          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="Gusty Code" />
         </div>
       </div>
     </div>

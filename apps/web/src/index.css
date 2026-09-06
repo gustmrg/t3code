@@ -134,7 +134,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
    the variables and Settings -> Appearance can override them at runtime. The
    default stacks are mirrored in `appearanceFonts.ts`. */
 @theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono:
     ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 }
@@ -281,45 +281,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
         display: inline-flex;
       }
     }
-  }
-
-  /* Stage-channel sidebar art; ::after ramps to the sidebar bg color and the
-     mask lets the surface grain show through at the boundary. Panels whose
-     background differs from the app chrome (e.g. sidebar v2) override
-     --sidebar-stage-fade so the art fades into their own surface color. */
-  .sidebar-stage-backdrop {
-    --stage-fade: var(--sidebar-stage-fade, var(--app-chrome-background));
-    mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
-    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
-  }
-
-  .sidebar-stage-backdrop::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      to bottom,
-      transparent 0%,
-      transparent 28%,
-      color-mix(in srgb, var(--stage-fade) 10%, transparent) 40%,
-      color-mix(in srgb, var(--stage-fade) 30%, transparent) 52%,
-      color-mix(in srgb, var(--stage-fade) 58%, transparent) 64%,
-      color-mix(in srgb, var(--stage-fade) 82%, transparent) 75%,
-      color-mix(in srgb, var(--stage-fade) 96%, transparent) 85%,
-      var(--stage-fade) 93%
-    );
-  }
-
-  .stage-blueprint {
-    --stage-bp-top: #67c2ff;
-    --stage-bp-mid: #347ff8;
-    --stage-bp-bottom: #1538d0;
-  }
-
-  .dark .stage-blueprint {
-    --stage-bp-top: #3a7ad1;
-    --stage-bp-mid: #2050ae;
-    --stage-bp-bottom: #101f6e;
   }
 
   .workspace-topbar {
@@ -921,7 +882,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --sidebar-row-active: var(--color-white);
   --sidebar-row-selected: var(--color-white);
   --sidebar-border: var(--border);
-  --sidebar-stage-fade: var(--sidebar);
   --code-background: color-mix(in srgb, var(--card) 90%, var(--background));
   --code-foreground: var(--foreground);
   --terminal-background: var(--background);
@@ -985,7 +945,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --sidebar-row-active: var(--accent);
     --sidebar-row-selected: var(--muted);
     --sidebar-border: var(--border);
-    --sidebar-stage-fade: var(--card);
     --terminal-background: var(--background);
     --terminal-foreground: var(--foreground);
     --terminal-cursor: rgb(180 203 255);
@@ -1017,7 +976,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --sidebar-row-active: var(--color-white);
   --sidebar-row-selected: var(--color-white);
   --sidebar-border: var(--color-zinc-200);
-  --sidebar-stage-fade: var(--sidebar);
   background-color: var(--sidebar);
 }
 
@@ -1040,10 +998,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --sidebar-row-active: color-mix(in srgb, var(--foreground) 11%, transparent);
   --sidebar-row-selected: color-mix(in srgb, var(--foreground) 7%, transparent);
   --sidebar-border: var(--border);
-  /* The stage-channel header art must ramp to THIS panel's surface, not the
-     global chrome background, or the fade shows a seam (same rule as the
-     light palette above). */
-  --sidebar-stage-fade: var(--card);
 }
 
 /* Theme files are expressed in app color roles and mapped to the existing
@@ -1109,7 +1063,6 @@ html.dark[data-theme-id] {
   --sidebar-row-active: var(--app-theme-sidebar-row-active);
   --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
   --sidebar-border: var(--app-theme-sidebar-border);
-  --sidebar-stage-fade: var(--app-theme-sidebar);
   --code-background: var(--app-theme-code-background);
   --code-foreground: var(--app-theme-code-foreground);
   --terminal-background: var(--app-theme-terminal-background);
@@ -1120,9 +1073,6 @@ html.dark[data-theme-id] {
   --terminal-scrollbar-hover: var(--app-theme-terminal-scrollbar-hover);
 }
 
-/* T3 Chat's composer is a translucent lift over --chat-background. Route its
-   measured flattened color through the raised-surface role instead of deriving
-   another tint from the canvas, which made the dark composer too red. */
 html[data-theme-id] .chat-composer-glass-shell {
   --chat-composer-glass-surface: var(--app-theme-surface-raised);
 }
@@ -1134,13 +1084,6 @@ html[data-theme-id]:not(.dark) .chat-composer-glass-shell {
 html.dark[data-theme-id] .chat-composer-glass-shell {
   --chat-composer-outline: color-mix(in srgb, var(--app-theme-input) 30%, var(--background));
   --chat-composer-highlight: color-mix(in srgb, var(--app-theme-input) 12%, transparent);
-}
-
-html.dark[data-theme-id="t3-chat"] .chat-composer-glass-shell {
-  /* T3 Chat's visible composer edge is a dark plum, not the stock translucent
-     white outline. Its highlight is derived from --chat-input-gradient. */
-  --chat-composer-outline: #241e28;
-  --chat-composer-highlight: color-mix(in srgb, #432d48 12%, transparent);
 }
 
 html[data-theme-id]:not(.dark) {
@@ -1295,24 +1238,6 @@ html[data-theme-id] .chat-markdown .chat-markdown-chrome-action {
   color: color-mix(in srgb, var(--code-foreground) 72%, transparent);
 }
 
-/* T3 Chat renders inline code and compact chat artifacts with its translucent
-   secondary surface flattened over the light chat canvas. The raw muted and
-   secondary tokens are substantially darker than those visible pixels. */
-html[data-theme-id="t3-chat"]:not(.dark) .chat-markdown :not(pre) > code,
-html[data-theme-id="t3-chat"]:not(.dark) [data-changed-files-state],
-html[data-theme-id="t3-chat"]:not(.dark) [data-changed-files-header] {
-  background-color: var(--message-surface);
-}
-
-html[data-theme-id="t3-chat"]:not(.dark) .chat-markdown :not(pre) > code,
-html[data-theme-id="t3-chat"]:not(.dark) [data-changed-files-state] {
-  border-color: transparent;
-}
-
-html[data-theme-id="t3-chat"]:not(.dark) .chat-markdown :not(pre) > code {
-  color: var(--message-foreground);
-}
-
 html[data-theme-id] .chat-markdown .chat-markdown-chrome-action:hover,
 html[data-theme-id] .chat-markdown .chat-markdown-chrome-action[aria-pressed="true"] {
   color: var(--code-foreground);
@@ -1337,7 +1262,6 @@ html[data-theme-id] [data-app-sidebar] {
   --sidebar-row-active: var(--app-theme-sidebar-row-active);
   --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
   --sidebar-border: var(--app-theme-sidebar-border);
-  --sidebar-stage-fade: var(--app-theme-sidebar);
   background-color: var(--sidebar);
 }
 
@@ -1350,12 +1274,6 @@ html[data-theme-id] [data-app-sidebar] {
 
 html.dark[data-theme-id] [data-app-sidebar] {
   border-color: color-mix(in srgb, var(--sidebar-foreground) 8%, transparent);
-}
-
-/* T3 Chat's panel divider is deliberately pink, and its resize affordance
-   keeps that color while hovered. Do not neutralize this branded edge. */
-html.dark[data-theme-id="t3-chat"] [data-app-sidebar] {
-  border-color: var(--sidebar-border);
 }
 
 .theme-json-key {
@@ -1419,14 +1337,6 @@ body {
 :root {
   --surface-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
   --surface-grain-size: 256px 256px;
-}
-
-/* The live T3 Chat texture is a 128px grayscale tile with a constant 7/255
-   alpha. Keep our procedural texture cheap while matching that scale and
-   strength for the branded preset. */
-html[data-theme-id="t3-chat"] {
-  --surface-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 128 128' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02745'/%3E%3C/svg%3E");
-  --surface-grain-size: 128px 128px;
 }
 
 body {
@@ -2110,4 +2020,14 @@ label:has(> select#reasoning-effort) select {
   background-color: Highlight;
   opacity: 0.3;
   pointer-events: none;
+}
+
+html[data-theme-id="gusty-code"] {
+  --success: #0e7490;
+  --success-foreground: #0e7490;
+  --surface-grain: none;
+}
+html.dark[data-theme-id="gusty-code"] {
+  --success: #06b6d4;
+  --success-foreground: #06b6d4;
 }

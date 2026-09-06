@@ -119,7 +119,9 @@ export const make = Effect.gen(function* () {
 
   const configure = Effect.gen(function* () {
     const commitHash = yield* resolveAboutCommitHash;
-    yield* electronApp.setName(environment.displayName);
+    // Electron uses its internal name for OS-backed encryption. Keep existing
+    // Safe Storage entries readable; OS bundle metadata and UI use the new brand.
+    yield* electronApp.setName(`T3 Code (${environment.branding.stageLabel})`);
     yield* electronApp.setAboutPanelOptions({
       applicationName: environment.displayName,
       applicationVersion: environment.appVersion,
