@@ -83,6 +83,7 @@ export function ThreadTerminalWorkspace({
   const [drawerFocus, setDrawerFocus] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const open = useAtomCommand(terminalEnvironment.open, { reportFailure: false });
+  const restart = useAtomCommand(terminalEnvironment.restart, { reportFailure: false });
   const close = useAtomCommand(terminalEnvironment.close, "close session");
   const navigate = useNavigate();
   const cwd = shell?.worktreePath ?? project?.workspaceRoot;
@@ -124,21 +125,27 @@ export function ThreadTerminalWorkspace({
   const resume = useCallback(async () => {
     if (!cwd) return;
     setError(null);
-    const result = await open({
-      environmentId: threadRef.environmentId,
-      input: {
-        threadId: threadRef.threadId,
-        terminalId: binding.mainTerminalId,
-        cwd,
-        ...(binding.startup._tag === "agent" ? { resumeSession: true } : {}),
-        ...(worktreePath ? { worktreePath } : {}),
-        env: runtimeEnv,
-      },
-    });
+    const input = {
+      threadId: threadRef.threadId,
+      terminalId: binding.mainTerminalId,
+      cwd,
+      ...(worktreePath ? { worktreePath } : {}),
+      env: runtimeEnv,
+    };
+    const result =
+      binding.startup._tag === "shell"
+        ? await restart({
+            environmentId: threadRef.environmentId,
+            input: { ...input, cols: 80, rows: 24 },
+          })
+        : await open({
+            environmentId: threadRef.environmentId,
+            input: { ...input, resumeSession: true },
+          });
     if (result._tag === "Failure")
       setError("The session could not be opened. Try again after reconnecting.");
     else setMainFocus((value) => value + 1);
-  }, [binding, cwd, open, runtimeEnv, threadRef, worktreePath]);
+  }, [binding, cwd, open, restart, runtimeEnv, threadRef, worktreePath]);
   const resumeAttempted = useRef(false);
   useEffect(() => {
     if (
@@ -153,8 +160,7 @@ export function ThreadTerminalWorkspace({
   }, [binding.startup._tag, config?.environment.capabilities.terminalSessionResume, cwd, resume]);
 
   const endSession = useCallback(async () => {
-    if (!(await confirmTerminalClose(["Main terminal — close this thread's running session"])))
-      return;
+    if (!(await confirmTerminalClose(["Main terminal"], "end-session"))) return;
     const result = await close({
       environmentId: threadRef.environmentId,
       input: { threadId: threadRef.threadId, terminalId: binding.mainTerminalId },

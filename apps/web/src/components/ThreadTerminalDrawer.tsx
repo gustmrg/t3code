@@ -1488,7 +1488,7 @@ export default function ThreadTerminalDrawer({
         />
       ) : null}
 
-      {!terminalWorkspaceSession && !hasTerminalSidebar && (
+      {!hasTerminalSidebar && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
           <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
             {maximizeControl}
@@ -1642,13 +1642,7 @@ export default function ThreadTerminalDrawer({
 
           {hasTerminalSidebar && (
             <aside className="flex w-36 min-w-36 flex-col border border-border/70 bg-muted/10">
-              <div
-                className={
-                  terminalWorkspaceSession
-                    ? "hidden"
-                    : "flex h-[22px] items-stretch justify-end border-b border-border/70"
-                }
-              >
+              <div className="flex h-[22px] items-stretch justify-end border-b border-border/70">
                 <div className="inline-flex h-full items-stretch">
                   {maximizeControl}
                   <TerminalActionButton
@@ -1697,7 +1691,8 @@ export default function ThreadTerminalDrawer({
                       <div className="flex flex-col gap-0.5">
                         {terminalGroup.terminalIds.map((terminalId) => {
                           const isActive = terminalId === resolvedActiveTerminalId;
-                          const terminalLabel = getTerminalLabel(terminalId);
+                          const terminalLabel =
+                            terminalLabelById.get(terminalId) ?? getTerminalLabel(terminalId);
                           const closeTerminalLabel = `Close ${terminalLabel}${
                             isActive && closeShortcutLabel ? ` (${closeShortcutLabel})` : ""
                           }`;

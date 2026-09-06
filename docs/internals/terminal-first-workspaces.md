@@ -13,8 +13,9 @@ create and metadata commands, events, both projectors, the nullable `terminal_wo
 The client resource identity is `(environmentId, threadId, mainTerminalId)`. The environment is
 implicit in each server. The binding identifies a terminal resource, not a PID or React surface.
 `startup` captures launch intent; it contains no executable, credentials or environment values.
-Application/project preferences affect new sessions only. `panelFirstByThreadKey` remains a layout
-preference, separate from the durable binding and from manual maximization.
+Application/project preferences affect new sessions only. Legacy `panelFirstByThreadKey` applies to
+traditional workspaces; a terminal workspace clears that inherited layout and uses explicit manual
+maximization for its tools.
 
 Servers advertise the optional `terminalWorkspaceSessions` capability. An absent capability is
 unsupported: updated clients offer an update message and retain the traditional draft instead of
@@ -31,7 +32,8 @@ thread remains the way to use structured chat today.
 
 ## Materialization barrier
 
-The client creates a draft, resolves preferences, sends `thread.materialize` with the binding, and
+The client resolves the application/project preference and environment capability before draft
+navigation. It records `launchView` on the draft, then sends `thread.materialize` with the binding and
 waits for the same environment's shell snapshot to reach the returned receipt sequence. The thread
 and sequence are read from that one snapshot. Subscriptions read immediately and again after
 subscribing, and clean up on success, cancellation, stream error or removal. Coalesced events may
@@ -41,6 +43,13 @@ Only then does the client open the terminal and activate its workspace. Navigati
 the creation route still being selected. Retry reuses the receipt and re-reads context without
 materializing again. In-flight attempts are coalesced by scoped thread; retry clicks also share the
 open operation. Setup bootstrap still records script startup, not script completion.
+
+The draft route renders `TerminalPreparation` for terminal intent. `terminalPreparationStore` holds
+only scoped, transient progress, errors and retry callbacks; reload cannot restore a pending promise.
+An interrupted draft offers recovery. The draft route does not use the Chat hero promotion delay.
+The server route waits for shell metadata and `ThreadWorkspace` chooses sibling `ChatView` or
+`ThreadTerminalWorkspace` components before chat hooks mount. After promotion the persisted binding,
+not the global preference, selects the experience. Draft removal cancels the receipt wait.
 
 ## Per-generation CLI submission
 
@@ -63,24 +72,36 @@ Settings changes between retries cannot implicitly terminate a live PTY.
 
 ## Presentation and execution lifetimes
 
-The main terminal surface is reconstructed from the binding, placed first, and protected from bulk close operations,
-close others, close to right, close all and process-exit cleanup. Files, diffs and previews use existing
-central surfaces. In-workspace file links from the main terminal also open these surfaces.
-The terminal header toggle, Cmd/Ctrl+J and palette action open the auxiliary bottom drawer.
-New-terminal actions in bound sessions also target that drawer; splits operate on its auxiliary
-terminals, never on the main terminal. Main and drawer renderers have separate focus requests.
-Legacy auxiliary central tabs move into the drawer without PTY close or restart operations.
-The main terminal ID is reserved during allocation and excluded from drawer reconciliation.
-Workspace visibility follows the panel store, with a reopening placeholder when hidden.
+`ThreadTerminalWorkspace` mounts `TerminalViewport` directly from the scoped binding. The principal
+is neither a right-panel surface nor an auxiliary terminal. `PersistentThreadTerminals` shares the
+drawer/panel wrappers with traditional Chat; it does not introduce another process manager.
+`ThreadWorkspaceTools` contains file, diff, preview, pull-request and agent tools. In-workspace links
+from the main terminal open files in that panel. Tools without a composer disable annotations that
+would otherwise send content to structured chat.
+
+The header, Cmd/Ctrl+J and palette target the auxiliary drawer; new-terminal actions create auxiliaries
+and split actions target the focused auxiliary. Main, drawer and tools have distinct focus ownership.
+The right-panel button changes only tool visibility. Manual maximization hides the main renderer with
+CSS while preserving its instance; restoration triggers a fit and retains the previous tools width.
+In narrow windows only the tools use a sheet.
+
+Legacy terminal surfaces, including auxiliaries sharing a split with the principal, migrate to the
+drawer without close or restart commands. The migration removes the principal surface and clears
+inherited panel-first layout once; repeated migration preserves new manual maximization choices.
+The drawer stores the reserved `mainTerminalId` and stable `auxiliaryOrdinals`, separate from process
+IDs. Reconciliation excludes the principal. Generic labels begin at Terminal 1 and retain their
+ordinals through close, split, reconciliation and reload; provider/custom labels retain precedence.
 
 Sidebar rows and search results use the main terminal metadata for provider identification, never
 the structured chat model preference. A verified native identity takes precedence over command labels and startup preferences. Without
 verified metadata the model and agent state are unavailable; auxiliary terminals never supply them.
 
 The main renderer attaches with `existingOnly`. Missing resources load retained history into an
-inactive session without spawning; exited resources remain exited. The renderer itself never launches an agent. On thread selection, ChatView requests an explicit
-resume on capable environments; the server reuses live processes without resubmitting commands. The main terminal has no start/restart toolbar. Closing a sheet affects only
-presentation; its fallback offers reopening the workspace, never a hidden structured composer.
+inactive session without spawning; exited resources remain exited. The renderer itself never launches an agent. On thread selection, `ThreadTerminalWorkspace` requests an explicit resume on capable environments;
+the server reuses live processes without resubmitting commands. The header has an End session action;
+an exited or unavailable session offers explicit recovery. Closing a tools sheet affects presentation
+only and returns to the main terminal. Explicit Shell recovery uses the existing restart command;
+provider recovery uses the guarded resume operation.
 Deleting a thread retains the existing process cleanup path.
 
 The PTY does not survive backend termination. The binding and persisted history do, but neither is a
@@ -96,8 +117,8 @@ working/idle transitions. Missing ownership, ambiguous matches and replayed hist
 unknown. Reads are incremental and bounded; terminal output and prompts are not parsed or copied.
 
 A `.session.json` sidecar beside terminal history stores the native ID, rollout path and last metadata.
-This is environment-local runtime metadata, separate from the durable workspace binding. Closing the
-main tab captures pending metadata, stops its PTY under the thread lock, retains history, and leaves
+This is environment-local runtime metadata, separate from the durable workspace binding. Ending the
+main session captures pending metadata, stops its PTY under the thread lock, retains history, and leaves
 auxiliary shells alone. The client lands on a closed-session screen rather than creating a new thread.
 
 Reopening validates the recorded rollout ID and submits `codex resume <id>` with its original

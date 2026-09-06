@@ -159,6 +159,17 @@ describe("new thread experience before navigation", () => {
     expect(harness.materialize).toHaveBeenCalledOnce();
   });
 
+  it("applies the current preference when reusing an empty Chat draft", async () => {
+    await handler()(projectRef, { forceChat: true });
+    const draftId = harness.state.matches[0]!.params.draftId!;
+    harness.materialize.mockRejectedValue(new Error("offline"));
+    await handler()(projectRef);
+    expect(useComposerDraftStore.getState().draftThreadsByThreadKey[draftId]?.launchView).toBe(
+      "terminal",
+    );
+    expect(harness.materialize).toHaveBeenCalledOnce();
+  });
+
   it("coalesces racing creations without losing the terminal draft", async () => {
     const materialized = deferred<{ _tag: "Success"; value: { sequence: number } }>();
     const started = deferred<void>();

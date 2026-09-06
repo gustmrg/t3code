@@ -25,6 +25,16 @@ describe("terminal close confirmation", () => {
     readLocalApiMock.mockReturnValue({ dialogs: { confirm: confirmMock } });
   });
 
+  it("explains that ending the main session preserves auxiliary processes", async () => {
+    confirmMock.mockResolvedValue(true);
+    await expect(confirmTerminalClose(["Main terminal"], "end-session")).resolves.toBe(true);
+    expect(confirmMock).toHaveBeenCalledWith(
+      expect.stringContaining("Auxiliary terminals keep running."),
+      { variant: "destructive" },
+    );
+    expect(confirmMock.mock.calls[0]?.[0]).not.toContain("clears its history");
+  });
+
   it("tracks pending state until the confirmation settles", async () => {
     let settle: (value: boolean) => void = () => undefined;
     confirmMock.mockImplementation(() => new Promise<boolean>((resolve) => (settle = resolve)));

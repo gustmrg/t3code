@@ -555,8 +555,11 @@ export function useNewThreadHandler() {
         const draft = store.getDraftSession(draftId);
         if (!draft) return;
         const launchView =
-          draft.launchView ??
-          (composerDraftHasUserContent(store.getComposerDraft(draftId)) ? "chat" : selectedView);
+          draft.launchView === "terminal"
+            ? "terminal"
+            : composerDraftHasUserContent(store.getComposerDraft(draftId))
+              ? "chat"
+              : selectedView;
         store.setDraftThreadContext(draftId, { launchView });
         if (launchView === "terminal") {
           beginTerminalPreparation(scopeThreadRef(draft.environmentId, draft.threadId));
