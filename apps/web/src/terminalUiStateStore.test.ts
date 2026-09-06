@@ -294,3 +294,69 @@ describe("terminalUiStateStore actions", () => {
     expect(useTerminalUiStateStore.getState()).toBe(before);
   });
 });
+
+describe("terminal workspace auxiliary identities", () => {
+  const read = () =>
+    selectThreadTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+      THREAD_REF,
+    );
+  beforeEach(() =>
+    useTerminalUiStateStore.setState({
+      terminalUiStateByThreadKey: {},
+      suppressedTerminalIdsByThreadKey: {},
+    }),
+  );
+  it("reserves the main process while numbering the first drawer terminal as 1", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.configureMainTerminal(THREAD_REF, "term-1");
+    store.setTerminalOpen(THREAD_REF, true);
+    expect(read().terminalIds).toEqual(["term-2"]);
+    expect(read().auxiliaryOrdinals).toEqual({ "term-2": 1 });
+    store.splitTerminal(THREAD_REF, "term-3");
+    store.closeTerminal(THREAD_REF, "term-2");
+    expect(read().auxiliaryOrdinals?.["term-3"]).toBe(2);
+    expect(read().terminalIds).toEqual(["term-3"]);
+    store.closeTerminal(THREAD_REF, "term-3");
+    store.setTerminalOpen(THREAD_REF, true);
+    expect(read().terminalIds).toEqual(["term-4"]);
+    expect(read().auxiliaryOrdinals?.["term-4"]).toBe(3);
+  });
+  it("migrates arbitrary main IDs and preserves labels across reload and reconciliation", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.newTerminal(THREAD_REF, "term-9");
+    store.splitTerminal(THREAD_REF, "custom-main");
+    store.newTerminal(THREAD_REF, "term-12");
+    store.configureMainTerminal(THREAD_REF, "custom-main");
+    expect(read().terminalIds).toEqual(["term-9", "term-12"]);
+    expect(read().auxiliaryOrdinals).toEqual({ "term-9": 1, "term-12": 2 });
+    const restored = migratePersistedTerminalUiStateStoreState(
+      JSON.parse(
+        JSON.stringify({
+          terminalUiStateByThreadKey: useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+        }),
+      ),
+      4,
+    );
+    useTerminalUiStateStore.setState(restored);
+    store.reconcileTerminalIds(THREAD_REF, ["term-12", "custom-main", "term-9"]);
+    expect(read().terminalIds).not.toContain("custom-main");
+    expect(read().auxiliaryOrdinals).toEqual({ "term-9": 1, "term-12": 2 });
+    store.configureMainTerminal(OTHER_THREAD_REF, "term-9");
+    store.newTerminal(OTHER_THREAD_REF, "term-12");
+    expect(
+      selectThreadTerminalUiState(
+        useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+        OTHER_THREAD_REF,
+      ).auxiliaryOrdinals,
+    ).toEqual({ "term-12": 1 });
+  });
+  it("keeps the principal reserved when auxiliary state is cleared", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.configureMainTerminal(THREAD_REF, "term-1");
+    store.setTerminalOpen(THREAD_REF, true);
+    store.clearTerminalUiState(THREAD_REF);
+    store.setTerminalOpen(THREAD_REF, true);
+    expect(read().terminalIds).not.toContain("term-1");
+  });
+});

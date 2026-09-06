@@ -268,9 +268,11 @@ export function terminalSelectionLineRange(position: {
 export type TerminalContextMenuAction = "add-to-chat" | "copy" | "paste";
 
 /** Post-selection popup: just the two selection actions, always enabled. */
-export function terminalSelectionMenuItems(): ContextMenuItem<"add-to-chat" | "copy">[] {
+export function terminalSelectionMenuItems(
+  allowChatContext = true,
+): ContextMenuItem<"add-to-chat" | "copy">[] {
   return [
-    { id: "add-to-chat", label: "Add to chat" },
+    ...(allowChatContext ? [{ id: "add-to-chat" as const, label: "Add to chat" }] : []),
     { id: "copy", label: "Copy" },
   ];
 }
@@ -283,9 +285,10 @@ export function terminalSelectionMenuItems(): ContextMenuItem<"add-to-chat" | "c
  */
 export function terminalContextMenuItems(options: {
   hasSelection: boolean;
+  allowChatContext?: boolean;
 }): ContextMenuItem<TerminalContextMenuAction>[] {
   return [
-    ...terminalSelectionMenuItems().map((item) => ({
+    ...terminalSelectionMenuItems(options.allowChatContext).map((item) => ({
       ...item,
       disabled: !options.hasSelection,
     })),
@@ -319,6 +322,7 @@ export function shouldHandleTerminalExit(
 }
 
 interface TerminalViewportProps {
+  allowChatContext?: boolean;
   existingOnly?: boolean;
   advancedTypography: boolean;
   threadRef: ScopedThreadRef;
@@ -344,6 +348,7 @@ interface TerminalLaunchLocation {
 }
 
 export function TerminalViewport({
+  allowChatContext = true,
   existingOnly = false,
   advancedTypography,
   threadRef,
@@ -398,6 +403,7 @@ export function TerminalViewport({
   });
   const readTerminalLabel = useEffectEvent(() => terminalLabel);
   const isMainTerminal = useEffectEvent(() => existingOnly);
+  const canAddToChat = useEffectEvent(() => allowChatContext);
   const terminalFontFamily = useClientSettings((settings) =>
     resolveTerminalFontPreference({
       advanced: advancedTypography,
@@ -646,7 +652,10 @@ export function TerminalViewport({
         let clicked: TerminalContextMenuAction | null;
         try {
           clicked = await localApi.contextMenu.show(
-            terminalContextMenuItems({ hasSelection: selectionAction !== null }),
+            terminalContextMenuItems({
+              hasSelection: selectionAction !== null,
+              allowChatContext: canAddToChat(),
+            }),
             { x: event.clientX, y: event.clientY },
           );
         } catch (error) {
@@ -659,7 +668,7 @@ export function TerminalViewport({
         }
         switch (clicked) {
           case "add-to-chat":
-            if (selectionAction) addSelectionToChat(selectionAction.selection);
+            if (canAddToChat() && selectionAction) addSelectionToChat(selectionAction.selection);
             return;
           case "copy":
             if (selectionAction) await copySelection(selectionAction.clipboardText, requestId);
@@ -686,7 +695,7 @@ export function TerminalViewport({
         const requestId = ++selectionActionRequestIdRef.current;
         openSelectionMenuRequestIdRef.current = requestId;
         const clicked = await localApi.contextMenu
-          .show(terminalSelectionMenuItems(), nextAction.position)
+          .show(terminalSelectionMenuItems(canAddToChat()), nextAction.position)
           .finally(() => {
             if (openSelectionMenuRequestIdRef.current === requestId) {
               openSelectionMenuRequestIdRef.current = null;
@@ -697,7 +706,7 @@ export function TerminalViewport({
         }
         switch (clicked) {
           case "add-to-chat":
-            addSelectionToChat(nextAction.selection);
+            if (canAddToChat()) addSelectionToChat(nextAction.selection);
             return;
           case "copy":
             await copySelection(nextAction.clipboardText, requestId);
@@ -1569,6 +1578,7 @@ export default function ThreadTerminalDrawer({
                     >
                       <div className="h-full">
                         <TerminalViewport
+                          allowChatContext={!terminalWorkspaceSession}
                           advancedTypography={advancedTypography}
                           threadRef={threadRef}
                           threadId={threadId}
@@ -1600,6 +1610,7 @@ export default function ThreadTerminalDrawer({
             ) : (
               <div className="h-full">
                 <TerminalViewport
+                  allowChatContext={!terminalWorkspaceSession}
                   advancedTypography={advancedTypography}
                   key={resolvedActiveTerminalId}
                   threadRef={threadRef}

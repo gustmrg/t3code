@@ -6,6 +6,7 @@
  */
 
 import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { nextTerminalId } from "@t3tools/shared/terminalLabels";
 import { type ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -18,6 +19,8 @@ import {
 } from "./types";
 
 interface ThreadTerminalUiState {
+  mainTerminalId?: string;
+  auxiliaryOrdinals?: Record<string, number>;
   terminalOpen: boolean;
   terminalHeight: number;
   terminalIds: string[];
@@ -171,6 +174,8 @@ function threadTerminalUiStateEqual(
   right: ThreadTerminalUiState,
 ): boolean {
   return (
+    left.mainTerminalId === right.mainTerminalId &&
+    left.auxiliaryOrdinals === right.auxiliaryOrdinals &&
     left.terminalOpen === right.terminalOpen &&
     left.terminalHeight === right.terminalHeight &&
     left.activeTerminalId === right.activeTerminalId &&
@@ -202,7 +207,18 @@ function getDefaultThreadTerminalUiState(): ThreadTerminalUiState {
 }
 
 function normalizeThreadTerminalUiState(state: ThreadTerminalUiState): ThreadTerminalUiState {
-  const nextTerminalIds = normalizeTerminalIds(state.terminalIds);
+  const nextTerminalIds = normalizeTerminalIds(state.terminalIds).filter(
+    (id) => id !== state.mainTerminalId,
+  );
+  let auxiliaryOrdinals = state.auxiliaryOrdinals;
+  if (state.mainTerminalId) {
+    const missing = nextTerminalIds.filter((id) => auxiliaryOrdinals?.[id] === undefined);
+    if (!auxiliaryOrdinals || missing.length > 0) {
+      auxiliaryOrdinals = { ...auxiliaryOrdinals };
+      let ordinal = Math.max(0, ...Object.values(auxiliaryOrdinals));
+      for (const id of missing) auxiliaryOrdinals[id] = ++ordinal;
+    }
+  }
   const activeTerminalId = nextTerminalIds.includes(state.activeTerminalId)
     ? state.activeTerminalId
     : (nextTerminalIds[0] ?? "");
@@ -216,6 +232,9 @@ function normalizeThreadTerminalUiState(state: ThreadTerminalUiState): ThreadTer
     terminalGroups.find((group) => group.terminalIds.includes(activeTerminalId))?.id ?? null;
 
   const normalized: ThreadTerminalUiState = {
+    ...(state.mainTerminalId
+      ? { mainTerminalId: state.mainTerminalId, auxiliaryOrdinals: auxiliaryOrdinals ?? {} }
+      : {}),
     terminalOpen: state.terminalOpen,
     terminalHeight:
       Number.isFinite(state.terminalHeight) && state.terminalHeight > 0
@@ -350,7 +369,16 @@ function upsertTerminalIntoGroups(
 function setThreadTerminalOpen(state: ThreadTerminalUiState, open: boolean): ThreadTerminalUiState {
   const normalized = normalizeThreadTerminalUiState(state);
   if (open && normalized.terminalIds.length === 0) {
-    return upsertTerminalIntoGroups(normalized, DEFAULT_THREAD_TERMINAL_ID, "new");
+    return upsertTerminalIntoGroups(
+      normalized,
+      normalized.mainTerminalId
+        ? nextTerminalId([
+            normalized.mainTerminalId,
+            ...Object.keys(normalized.auxiliaryOrdinals ?? {}),
+          ])
+        : DEFAULT_THREAD_TERMINAL_ID,
+      "new",
+    );
   }
   if (normalized.terminalOpen === open) return normalized;
   return { ...normalized, terminalOpen: open };
@@ -417,7 +445,16 @@ function closeThreadTerminal(
 
   const remainingTerminalIds = normalized.terminalIds.filter((id) => id !== terminalId);
   if (remainingTerminalIds.length === 0) {
-    return createDefaultThreadTerminalUiState();
+    return normalized.mainTerminalId
+      ? {
+          ...normalized,
+          terminalOpen: false,
+          terminalIds: [],
+          terminalGroups: [],
+          activeTerminalId: "",
+          activeTerminalGroupId: "",
+        }
+      : createDefaultThreadTerminalUiState();
   }
 
   const closedTerminalIndex = normalized.terminalIds.indexOf(terminalId);
@@ -442,6 +479,7 @@ function closeThreadTerminal(
     fallbackGroupId(nextActiveTerminalId);
 
   return normalizeThreadTerminalUiState({
+    ...normalized,
     terminalOpen: normalized.terminalOpen,
     terminalHeight: normalized.terminalHeight,
     terminalIds: remainingTerminalIds,
@@ -564,6 +602,7 @@ interface TerminalUiStateStoreState {
   terminalUiStateByThreadKey: Record<string, ThreadTerminalUiState>;
   /** Closed ids hidden from stale server metadata until that id is explicitly opened again. */
   suppressedTerminalIdsByThreadKey: Record<string, string[]>;
+  configureMainTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
   setTerminalOpen: (threadRef: ScopedThreadRef, open: boolean) => void;
   setTerminalHeight: (threadRef: ScopedThreadRef, height: number) => void;
   splitTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
@@ -625,6 +664,10 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
       return {
         terminalUiStateByThreadKey: {},
         suppressedTerminalIdsByThreadKey: {},
+        configureMainTerminal: (threadRef, terminalId) =>
+          updateTerminal(threadRef, (state) =>
+            normalizeThreadTerminalUiState({ ...state, mainTerminalId: terminalId }),
+          ),
         setTerminalOpen: (threadRef, open) => {
           const terminalState = selectThreadTerminalUiState(
             get().terminalUiStateByThreadKey,
@@ -634,7 +677,15 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
             threadRef,
             (state) => setThreadTerminalOpen(state, open),
             open && terminalState.terminalIds.length === 0
-              ? { terminalId: DEFAULT_THREAD_TERMINAL_ID, suppressed: false }
+              ? {
+                  terminalId: terminalState.mainTerminalId
+                    ? nextTerminalId([
+                        terminalState.mainTerminalId,
+                        ...Object.keys(terminalState.auxiliaryOrdinals ?? {}),
+                      ])
+                    : DEFAULT_THREAD_TERMINAL_ID,
+                  suppressed: false,
+                }
               : undefined,
           );
         },
@@ -704,7 +755,17 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
             const nextTerminalUiStateByThreadKey = updateTerminalUiStateByThreadKey(
               state.terminalUiStateByThreadKey,
               threadRef,
-              () => createDefaultThreadTerminalUiState(),
+              (current) =>
+                current.mainTerminalId
+                  ? {
+                      ...current,
+                      terminalOpen: false,
+                      terminalIds: [],
+                      terminalGroups: [],
+                      activeTerminalId: "",
+                      activeTerminalGroupId: "",
+                    }
+                  : createDefaultThreadTerminalUiState(),
             );
             const hadSuppressedTerminalIds =
               state.suppressedTerminalIdsByThreadKey[threadKey] !== undefined;

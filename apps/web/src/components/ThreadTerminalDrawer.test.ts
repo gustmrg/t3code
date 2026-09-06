@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  terminalSelectionMenuItems,
+  terminalContextMenuItems,
   resolveTerminalSelectionActionPosition,
   shouldHandleTerminalExit,
   shouldHandleTerminalSelectionMouseUp,
@@ -89,4 +91,13 @@ describe("resolveTerminalSelectionActionPosition", () => {
     expect(shouldHandleTerminalExit("exited", "exited", false)).toBe(false);
     expect(shouldHandleTerminalExit("closed", "running", true)).toBe(false);
   });
+});
+
+it("keeps copy and paste without offering a nonexistent composer in terminal workspaces", () => {
+  expect(terminalSelectionMenuItems(false).map((item) => item.id)).toEqual(["copy"]);
+  expect(
+    terminalContextMenuItems({ hasSelection: true, allowChatContext: false }).map(
+      (item) => item.id,
+    ),
+  ).toEqual(["copy", "paste"]);
 });

@@ -1,9 +1,22 @@
+import * as Schema from "effect/Schema";
+import { useLocalStorage } from "../hooks/useLocalStorage";
+import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../appearanceFonts";
+import { getTerminalFocusOwner } from "../lib/terminalFocus";
+import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import { subscribeWorkspaceAction } from "../workspaceActionBus";
+import { subscribePreviewAction } from "./preview/previewActionBus";
+import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
+import {
+  preventTerminalCloseShortcut,
+  preventRepeatedTerminalCloseShortcut,
+} from "../lib/terminalCloseShortcut";
 import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef, TerminalWorkspaceBinding } from "@t3tools/contracts";
 import { projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useThreadShell, useProject } from "../state/entities";
 import { useKnownTerminalSessions } from "../state/terminalSessions";
@@ -40,6 +53,11 @@ export function ThreadTerminalWorkspace({
   const shell = useThreadShell(threadRef);
   const project = useProject(
     shell ? scopeProjectRef(threadRef.environmentId, shell.projectId) : null,
+  );
+  const [advancedTypography] = useLocalStorage(
+    TYPOGRAPHY_ADVANCED_STORAGE_KEY,
+    false,
+    Schema.Boolean,
   );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const config = useAtomValue(serverEnvironment.configValueAtom(threadRef.environmentId));
@@ -80,6 +98,7 @@ export function ThreadTerminalWorkspace({
   useEffect(() => {
     const panels = useRightPanelStore.getState();
     const terminals = useTerminalUiStateStore.getState();
+    terminals.configureMainTerminal(threadRef, binding.mainTerminalId);
     const wasOpen = selectThreadTerminalUiState(
       terminals.terminalUiStateByThreadKey,
       threadRef,
@@ -143,35 +162,36 @@ export function ThreadTerminalWorkspace({
     if (result._tag !== "Failure") await navigate({ to: "/", search: { sessionClosed: true } });
   }, [binding.mainTerminalId, close, navigate, threadRef]);
 
-  const newAuxiliary = useCallback(() => {
-    if (!cwd) return;
-    const id = nextTerminalId([
-      binding.mainTerminalId,
-      ...drawer.terminalIds,
-      ...sessions.map((session) => session.target.terminalId),
-    ]);
-    useTerminalUiStateStore.getState().newTerminal(threadRef, id);
-    setDrawerFocus((value) => value + 1);
-    void open({
-      environmentId: threadRef.environmentId,
-      input: {
-        threadId: threadRef.threadId,
-        terminalId: id,
-        cwd,
-        ...(worktreePath ? { worktreePath } : {}),
-        env: runtimeEnv,
-      },
-    });
-  }, [
-    binding.mainTerminalId,
-    cwd,
-    drawer.terminalIds,
-    open,
-    runtimeEnv,
-    sessions,
-    threadRef,
-    worktreePath,
-  ]);
+  const newAuxiliary = useCallback(
+    (mode: "new" | "split" | "vertical" = "new") => {
+      if (!cwd) return;
+      const terminalStore = useTerminalUiStateStore.getState();
+      const current = selectThreadTerminalUiState(
+        terminalStore.terminalUiStateByThreadKey,
+        threadRef,
+      );
+      const id = nextTerminalId([
+        binding.mainTerminalId,
+        ...current.terminalIds,
+        ...sessions.map((session) => session.target.terminalId),
+      ]);
+      if (mode === "split") terminalStore.splitTerminal(threadRef, id);
+      else if (mode === "vertical") terminalStore.splitTerminalVertical(threadRef, id);
+      else terminalStore.newTerminal(threadRef, id);
+      setDrawerFocus((value) => value + 1);
+      void open({
+        environmentId: threadRef.environmentId,
+        input: {
+          threadId: threadRef.threadId,
+          terminalId: id,
+          cwd,
+          ...(worktreePath ? { worktreePath } : {}),
+          env: runtimeEnv,
+        },
+      });
+    },
+    [binding.mainTerminalId, cwd, open, runtimeEnv, sessions, threadRef, worktreePath],
+  );
   const toggleDrawer = () => {
     if (
       !drawer.terminalOpen &&
@@ -188,6 +208,108 @@ export function ThreadTerminalWorkspace({
     useRightPanelStore.getState().toggleVisibility(threadRef);
     if (panel.isOpen) setMainFocus((value) => value + 1);
   };
+  const closeAuxiliary = async () => {
+    const id = drawer.activeTerminalId;
+    if (!id || id === binding.mainTerminalId) return;
+    const label = drawer.auxiliaryOrdinals?.[id] ? `Terminal ${drawer.auxiliaryOrdinals[id]}` : id;
+    if (!(await confirmTerminalClose([label]))) return;
+    const result = await close({
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId, terminalId: id, deleteHistory: true },
+    });
+    if (result._tag !== "Failure") {
+      useTerminalUiStateStore.getState().closeTerminal(threadRef, id);
+      setDrawerFocus((value) => value + 1);
+    }
+  };
+  const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (
+      preventRepeatedTerminalCloseShortcut(event, keybindings) ||
+      (isTerminalCloseConfirmPending() && preventTerminalCloseShortcut(event, keybindings))
+    ) {
+      event.stopPropagation();
+      return;
+    }
+    if (isCommandPaletteOpen()) return;
+    const owner = getTerminalFocusOwner();
+    if (event.defaultPrevented && !owner) return;
+    const command = resolveShortcutCommand(event, keybindings, {
+      context: {
+        terminalFocus: owner !== null,
+        terminalOpen: drawer.terminalOpen,
+        modelPickerOpen: false,
+      },
+    });
+    switch (command) {
+      case "terminal.toggle":
+        toggleDrawer();
+        break;
+      case "terminal.new":
+        newAuxiliary();
+        break;
+      case "terminal.split":
+        newAuxiliary(owner === "drawer" ? "split" : "new");
+        break;
+      case "terminal.splitVertical":
+        newAuxiliary(owner === "drawer" ? "vertical" : "new");
+        break;
+      case "terminal.close":
+        if (owner === "main") void endSession();
+        else if (owner === "drawer") void closeAuxiliary();
+        else return;
+        break;
+      case "rightPanel.toggle":
+        togglePanel();
+        break;
+      case "rightPanel.toggleMaximized":
+        if (panel.isOpen && !sheet) useRightPanelStore.getState().toggleMaximized(threadRef);
+        break;
+      case "diff.toggle":
+        useRightPanelStore.getState().toggle(threadRef, "diff");
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => onKeyDown(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
+  const onWorkspaceAction = useEffectEvent(
+    (action: Parameters<Parameters<typeof subscribeWorkspaceAction>[0]>[0]) => {
+      const panels = useRightPanelStore.getState();
+      switch (action) {
+        case "open-terminal":
+          if (!drawer.terminalOpen) toggleDrawer();
+          else setDrawerFocus((value) => value + 1);
+          break;
+        case "open-files":
+          panels.open(threadRef, "files");
+          break;
+        case "open-diff":
+          panels.open(threadRef, "diff");
+          break;
+        case "open-preview":
+          panels.openBrowser(threadRef, null);
+          break;
+        case "use-panel-workspace":
+          if (panel.isOpen && !maximized) panels.toggleMaximized(threadRef);
+          break;
+        case "restore-chat":
+          panels.restoreSplit(threadRef);
+          setMainFocus((value) => value + 1);
+          break;
+      }
+    },
+  );
+  useEffect(() => subscribeWorkspaceAction((action) => onWorkspaceAction(action)), []);
+  const onPreviewAction = useEffectEvent(() =>
+    useRightPanelStore.getState().toggle(threadRef, "preview"),
+  );
+  useEffect(() => subscribePreviewAction(() => onPreviewAction()), []);
   const summary = sessions.find((session) => session.target.terminalId === binding.mainTerminalId)
     ?.state.summary;
   const mainHidden = panel.isOpen && maximized && !sheet;
@@ -207,10 +329,10 @@ export function ThreadTerminalWorkspace({
         <PanelLayoutControls
           terminalAvailable={!!project}
           terminalOpen={drawer.terminalOpen}
-          terminalShortcutLabel={null}
+          terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
           rightPanelAvailable={!!project}
           rightPanelOpen={panel.isOpen}
-          rightPanelShortcutLabel={null}
+          rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
           liveAgentCount={0}
           onToggleTerminal={toggleDrawer}
           onToggleRightPanel={togglePanel}
@@ -239,7 +361,8 @@ export function ThreadTerminalWorkspace({
             <div className="min-h-0 flex-1">
               <TerminalViewport
                 existingOnly
-                advancedTypography={false}
+                allowChatContext={false}
+                advancedTypography={advancedTypography}
                 threadRef={threadRef}
                 threadId={threadRef.threadId}
                 terminalId={binding.mainTerminalId}
@@ -256,7 +379,7 @@ export function ThreadTerminalWorkspace({
               />
             </div>
           ) : null}
-          {summary?.status === "exited" ? (
+          {!summary || summary.status === "exited" || summary.status === "error" ? (
             <Button onClick={() => void resume()}>Resume session</Button>
           ) : null}
         </div>
@@ -279,10 +402,12 @@ export function ThreadTerminalWorkspace({
         visible={drawer.terminalOpen}
         launchContext={cwd ? { cwd, worktreePath } : null}
         focusRequestId={drawerFocus}
-        splitShortcutLabel={undefined}
-        splitVerticalShortcutLabel={undefined}
-        newShortcutLabel={undefined}
-        closeShortcutLabel={undefined}
+        splitShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.split") ?? undefined}
+        splitVerticalShortcutLabel={
+          shortcutLabelForCommand(keybindings, "terminal.splitVertical") ?? undefined
+        }
+        newShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.new") ?? undefined}
+        closeShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.close") ?? undefined}
         keybindings={keybindings}
         onAddTerminalContext={ignoreSelection}
       />

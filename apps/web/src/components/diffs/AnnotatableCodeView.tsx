@@ -81,7 +81,7 @@ interface AnnotatableCodeViewProps {
   }>;
   sectionId: string;
   sectionTitle: string;
-  composerDraftTarget: ScopedThreadRef | DraftId;
+  composerDraftTarget: ScopedThreadRef | DraftId | null;
   options: StyledDiffCodeViewOptions<DiffCommentAnnotationGroup>;
   viewerRef?: Ref<AnnotatableCodeViewHandle>;
   className?: string;
@@ -110,7 +110,9 @@ export function AnnotatableCodeView({
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
   const reviewComments = useComposerDraftStore(
-    (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_REVIEW_COMMENTS,
+    (store) =>
+      (composerDraftTarget ? store.getComposerDraft(composerDraftTarget)?.reviewComments : null) ??
+      EMPTY_REVIEW_COMMENTS,
   );
   const [selectedLines, setSelectedLines] = useState<{
     id: string;
@@ -172,7 +174,7 @@ export function AnnotatableCodeView({
       if (draft?.annotation.metadata.entries.some((entry) => entry.id === entryId)) {
         setDraft(null);
         setDraftText("");
-      } else {
+      } else if (composerDraftTarget) {
         removeReviewComment(composerDraftTarget, entryId);
       }
     },
@@ -195,7 +197,7 @@ export function AnnotatableCodeView({
         range: entry.range,
         text,
       });
-      if (comment) addReviewComment(composerDraftTarget, comment);
+      if (comment && composerDraftTarget) addReviewComment(composerDraftTarget, comment);
       setSelectedLines(null);
       setDraft(null);
       setDraftText("");
@@ -205,7 +207,7 @@ export function AnnotatableCodeView({
 
   const beginComment = useCallback(
     (range: SelectedLineRange | null, context: DiffSelectionContext) => {
-      if (!range) return;
+      if (!range || !composerDraftTarget) return;
       const item = context.item;
       if (item.type !== "diff") return;
       const file = filesByKey.get(item.id);
@@ -233,7 +235,7 @@ export function AnnotatableCodeView({
         },
       });
     },
-    [filesByKey, sectionId, sectionTitle],
+    [composerDraftTarget, filesByKey, sectionId, sectionTitle],
   );
 
   const hasOpenComment = draft !== null;
@@ -247,8 +249,8 @@ export function AnnotatableCodeView({
       onSelectedLinesChange={setSelectedLines}
       options={{
         ...options,
-        enableGutterUtility: !hasOpenComment,
-        enableLineSelection: !hasOpenComment,
+        enableGutterUtility: !!composerDraftTarget && !hasOpenComment,
+        enableLineSelection: !!composerDraftTarget && !hasOpenComment,
         onGutterUtilityClick: beginComment,
       }}
       renderHeaderPrefix={(item) =>

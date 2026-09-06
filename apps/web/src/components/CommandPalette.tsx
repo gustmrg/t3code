@@ -1573,8 +1573,10 @@ function OpenCommandPaletteDialog(props: {
         kind: "action",
         value: "action:workspace-changes",
         searchTerms: ["workspace", "changes", "diff", "review", "panel", "full width"],
-        title: "Open Changes as workspace",
-        description: "Review this thread's diff in the full-width primary panel.",
+        title: activeThread.terminalWorkspace ? "Open Changes" : "Open Changes as workspace",
+        description: activeThread.terminalWorkspace
+          ? "Review changes beside the terminal."
+          : "Review this thread's diff in the full-width primary panel.",
         icon: <FileDiffIcon className={ITEM_ICON_CLASS} />,
         run: async () => dispatchWorkspaceAction("open-diff"),
       },
@@ -1582,8 +1584,10 @@ function OpenCommandPaletteDialog(props: {
         kind: "action",
         value: "action:workspace-files",
         searchTerms: ["workspace", "files", "browse", "panel", "full width"],
-        title: "Open Files as workspace",
-        description: "Browse project files in the full-width primary panel.",
+        title: activeThread.terminalWorkspace ? "Open Files" : "Open Files as workspace",
+        description: activeThread.terminalWorkspace
+          ? "Browse files beside the terminal."
+          : "Browse project files in the full-width primary panel.",
         icon: <FolderIcon className={ITEM_ICON_CLASS} />,
         run: async () => dispatchWorkspaceAction("open-files"),
       },
@@ -1591,7 +1595,7 @@ function OpenCommandPaletteDialog(props: {
         kind: "action",
         value: "action:workspace-preview",
         searchTerms: ["workspace", "preview", "browser", "panel", "full width"],
-        title: "Open Preview as workspace",
+        title: activeThread.terminalWorkspace ? "Open Preview" : "Open Preview as workspace",
         description: isPreviewSupportedInRuntime()
           ? "Use Preview in the full-width primary panel."
           : "Preview is available in the desktop app.",
@@ -1603,7 +1607,7 @@ function OpenCommandPaletteDialog(props: {
         kind: "action",
         value: "action:workspace-maximize",
         searchTerms: ["workspace", "maximize", "panel", "full width", "hide chat"],
-        title: "Use panel as workspace",
+        title: activeThread.terminalWorkspace ? "Maximize tools" : "Use panel as workspace",
         description: workspacePanelOpen
           ? "Keep the current panel full-width while switching tabs."
           : "Open a workspace panel first.",
@@ -1615,11 +1619,15 @@ function OpenCommandPaletteDialog(props: {
         kind: "action",
         value: "action:workspace-restore-chat",
         searchTerms: ["workspace", "restore", "chat", "split", "panel"],
-        title: "Restore Chat and panel split",
+        title: activeThread.terminalWorkspace
+          ? "Restore Terminal and tools split"
+          : "Restore Chat and panel split",
         description: workspacePanelMaximized
-          ? "Show structured chat beside the current workspace panel."
-          : "Chat and the workspace panel are already split.",
-        disabled: !!activeThread.terminalWorkspace || !workspacePanelMaximized,
+          ? activeThread.terminalWorkspace
+            ? "Show the terminal beside the tools."
+            : "Show structured chat beside the current workspace panel."
+          : "The workspace is already split.",
+        disabled: !workspacePanelMaximized,
         icon: <PanelsTopLeftIcon className={ITEM_ICON_CLASS} />,
         run: async () => dispatchWorkspaceAction("restore-chat"),
       },

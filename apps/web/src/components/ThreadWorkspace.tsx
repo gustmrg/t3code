@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import { useMemo, type ComponentProps } from "react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { useThreadShell } from "../state/entities";
 import ChatView from "./ChatView";
@@ -9,7 +9,10 @@ import { ThreadTerminalWorkspace } from "./ThreadTerminalWorkspace";
 export function ThreadWorkspace(
   props: Extract<ComponentProps<typeof ChatView>, { routeKind: "server" }>,
 ) {
-  const ref = scopeThreadRef(props.environmentId, props.threadId);
+  const ref = useMemo(
+    () => scopeThreadRef(props.environmentId, props.threadId),
+    [props.environmentId, props.threadId],
+  );
   const shell = useThreadShell(ref);
   if (!shell) return <WorkspaceLoading />;
   return shell.terminalWorkspace ? (

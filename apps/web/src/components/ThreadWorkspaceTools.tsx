@@ -1,5 +1,13 @@
+import { useEnvironmentQuery } from "../state/query";
+import { vcsEnvironment } from "../state/vcs";
+import {
+  resolveDisplayedThreadPr,
+  threadChangeRequestSnapshotsAtom,
+  useLinkedThreadPullRequest,
+} from "./ThreadStatusIndicators";
+import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { useAtomValue } from "@effect/atom-react";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   deriveAgentPanelModel,
   foldSubagentActivities,
@@ -60,7 +68,24 @@ export function ThreadWorkspaceTools({
   const preview = useThreadPreviewState(threadRef);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const config = useAtomValue(serverEnvironment.configValueAtom(threadRef.environmentId));
+  const openPreview = useAtomCommand(previewEnvironment.open, "preview open");
   const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
+  const cwd = shell?.worktreePath ?? project?.workspaceRoot;
+  const gitStatus = useEnvironmentQuery(
+    cwd ? vcsEnvironment.status({ environmentId: threadRef.environmentId, input: { cwd } }) : null,
+  );
+  const snapshots = useAtomValue(threadChangeRequestSnapshotsAtom);
+  const linked = shell?.linkedPullRequest ?? null;
+  const linkedStatus = useLinkedThreadPullRequest(threadRef.environmentId, linked);
+  const pr = resolveDisplayedThreadPr({
+    threadBranch: shell?.branch ?? null,
+    gitStatus: gitStatus.data ?? null,
+    snapshot: snapshots.get(scopedThreadKey(threadRef)),
+    retainTerminalOnBranchMismatch: shell?.worktreePath === null,
+    linkedPullRequest: linked,
+    linkedPullRequestStatus: linkedStatus,
+  });
+  const repository = linked?.repository ?? project?.repositoryIdentity?.displayName;
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const store = useRightPanelStore.getState();
   const closeSurface = (surface: RightPanelSurface) => {
@@ -77,7 +102,7 @@ export function ThreadWorkspaceTools({
     active?.kind === "preview" ? (
       <PreviewPanel mode="embedded" threadRef={threadRef} tabId={active.resourceId} visible />
     ) : active?.kind === "diff" ? (
-      <DiffPanel mode="embedded" composerDraftTarget={threadRef} initialGitScope="unstaged" />
+      <DiffPanel mode="embedded" composerDraftTarget={null} initialGitScope="unstaged" />
     ) : active?.kind === "pull-request" ? (
       <PullRequestDetailPanel
         environmentId={threadRef.environmentId}
@@ -96,7 +121,7 @@ export function ThreadWorkspaceTools({
         cwd={shell?.worktreePath ?? project.workspaceRoot}
         projectName={project.title}
         threadRef={threadRef}
-        composerDraftTarget={threadRef}
+        composerDraftTarget={null}
         keybindings={keybindings}
         availableEditors={config?.availableEditors ?? []}
         relativePath={active.kind === "file" ? active.relativePath : null}
@@ -145,17 +170,26 @@ export function ThreadWorkspaceTools({
       }
       onCloseAllSurfaces={() => panel.surfaces.forEach(closeSurface)}
       onCopyFilePath={(path) => void navigator.clipboard.writeText(path)}
-      onAddBrowser={() => store.openBrowser(threadRef, null)}
+      onAddBrowser={() => void addBrowserSurface({ threadRef, openPreview })}
       onAddTerminal={onNewTerminal}
       onAddDiff={() => store.open(threadRef, "diff")}
       onAddFiles={() => store.open(threadRef, "files")}
-      onAddPullRequest={() => {}}
+      onAddPullRequest={() => {
+        if (pr && repository && project)
+          store.openPullRequest(threadRef, {
+            projectId: linked?.projectId ?? project.id,
+            repository,
+            number: pr.number,
+          });
+      }}
       onAddAgents={() => store.open(threadRef, "agents")}
       browserAvailable={isPreviewSupportedInRuntime()}
       terminalAvailable={!!project}
-      diffAvailable={!!project}
+      diffAvailable={!!project && gitStatus.data?.isRepo !== false}
       filesAvailable={!!project}
-      pullRequestAvailable={false}
+      pullRequestAvailable={
+        !!pr && !!repository && config?.environment.capabilities.pullRequests === true
+      }
       agentsAvailable
       liveAgentCount={0}
     >

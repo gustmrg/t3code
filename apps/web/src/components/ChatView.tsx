@@ -3453,8 +3453,6 @@ function ChatViewContent(props: ChatViewProps) {
         activeServerThread.session
       )
         return;
-      for (const session of activeThreadKnownSessions)
-        useRightPanelStore.getState().openTerminal(activeThreadRef, session.target.terminalId);
       const knownLaunch = activeThreadKnownSessions.find(
         (entry) => entry.target.terminalId === terminalId,
       )?.state.summary?.agentLaunch;

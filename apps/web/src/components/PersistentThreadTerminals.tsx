@@ -131,15 +131,27 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     [knownTerminalSessions, panelTerminalIds],
   );
   const terminalLabelsById = useMemo(() => {
-    const next = new Map<string, string>();
+    const next = new Map<string, string>(
+      terminalWorkspace
+        ? Object.entries(terminalUiState.auxiliaryOrdinals ?? {}).map(([id, ordinal]) => [
+            id,
+            `Terminal ${ordinal}`,
+          ])
+        : [],
+    );
     for (const session of drawerTerminalSessions) {
       next.set(
         session.target.terminalId,
-        resolveTerminalSessionLabel(session.target.terminalId, session.state.summary),
+        terminalWorkspace &&
+          terminalUiState.auxiliaryOrdinals?.[session.target.terminalId] &&
+          (!session.state.summary?.label || /^Terminal \d+$/.test(session.state.summary.label)) &&
+          !session.state.summary?.agentLaunch
+          ? `Terminal ${terminalUiState.auxiliaryOrdinals[session.target.terminalId]}`
+          : resolveTerminalSessionLabel(session.target.terminalId, session.state.summary),
       );
     }
     return next;
-  }, [drawerTerminalSessions]);
+  }, [drawerTerminalSessions, terminalWorkspace, terminalUiState.auxiliaryOrdinals]);
   const terminalLaunchLocationsById = useMemo(() => {
     const next = new Map<
       string,
@@ -409,6 +421,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   return (
     <div className={visible ? undefined : "hidden"}>
       <ThreadTerminalDrawer
+        terminalWorkspaceSession={!!terminalWorkspace}
         threadRef={threadRef}
         threadId={threadId}
         cwd={cwd}

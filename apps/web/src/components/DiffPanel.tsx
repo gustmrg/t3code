@@ -88,7 +88,7 @@ const EMPTY_COLLAPSED_DIFF_FILE_KEYS: ReadonlySet<string> = new Set();
 
 interface DiffPanelProps {
   mode?: DiffPanelMode;
-  composerDraftTarget: ScopedThreadRef | DraftId;
+  composerDraftTarget: ScopedThreadRef | DraftId | null;
   initialGitScope: "branch" | "unstaged";
 }
 

@@ -71,7 +71,7 @@ interface FilePreviewPanelProps {
   projectName: string;
   relativePath: string | null;
   threadRef: ScopedThreadRef;
-  composerDraftTarget: ScopedThreadRef | DraftId;
+  composerDraftTarget: ScopedThreadRef | DraftId | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   revealLine: number | null;
@@ -386,7 +386,7 @@ interface EditableFileSurfaceProps {
   environmentId: EnvironmentId;
   cwd: string;
   relativePath: string;
-  composerDraftTarget: ScopedThreadRef | DraftId;
+  composerDraftTarget: ScopedThreadRef | DraftId | null;
   contents: string;
   resolvedTheme: "light" | "dark";
   revealRequestId: number;
@@ -471,7 +471,7 @@ function EditableFileSurface({
         onChange: (file, nextLineAnnotations) => {
           setProjectFileQueryData(environmentId, cwd, relativePath, file.contents);
           saveCoordinator.change(file.contents);
-          if (nextLineAnnotations) {
+          if (nextLineAnnotations && composerDraftTarget) {
             const remapped = remapFileCommentAnnotations(
               nextLineAnnotations as FileCommentLineAnnotation[],
             );
@@ -508,7 +508,7 @@ function EditableFileSurface({
   const removeAnnotationEntry = useCallback(
     (entryId: string) => {
       setSelectedRange(null);
-      removeReviewComment(composerDraftTarget, entryId);
+      if (composerDraftTarget) removeReviewComment(composerDraftTarget, entryId);
       setLineAnnotations((current) => {
         return current.flatMap((annotation) => {
           const entries = annotation.metadata.entries.filter((entry) => entry.id !== entryId);
@@ -525,7 +525,7 @@ function EditableFileSurface({
       const entry = lineAnnotations
         .flatMap((annotation) => annotation.metadata.entries)
         .find((candidate) => candidate.id === entryId);
-      if (entry) {
+      if (entry && composerDraftTarget) {
         addReviewComment(
           composerDraftTarget,
           buildFileReviewComment({
@@ -613,11 +613,11 @@ function EditableFileSurface({
   const handleLineSelectionEnd = useCallback(
     (range: SelectedLineRange | null) => {
       setSelectedRange(range);
-      if (range) {
+      if (range && composerDraftTarget) {
         beginComment(range);
       }
     },
-    [beginComment, setSelectedRange],
+    [beginComment, composerDraftTarget, setSelectedRange],
   );
 
   const handlePostRender = useCallback<FilePostRender>(
@@ -663,8 +663,8 @@ function EditableFileSurface({
             }}
             options={{
               disableFileHeader: true,
-              enableGutterUtility: !hasOpenCommentForm,
-              enableLineSelection: !hasOpenCommentForm,
+              enableGutterUtility: !!composerDraftTarget && !hasOpenCommentForm,
+              enableLineSelection: !!composerDraftTarget && !hasOpenCommentForm,
               onGutterUtilityClick: setSelectedRange,
               onLineSelectionChange: setSelectedRange,
               onLineSelectionEnd: handleLineSelectionEnd,

@@ -79,3 +79,14 @@ describe("isTerminalFocused", () => {
     expect(isTerminalFocused()).toBe(true);
   });
 });
+
+it("identifies the main terminal independently of drawer and tools", () => {
+  const main = new MockHTMLElement();
+  main.isConnected = true;
+  main.terminalOwner = "main";
+  main.dataset.terminalOwner = "main";
+  globalThis.HTMLElement = MockHTMLElement as unknown as typeof HTMLElement;
+  globalThis.document = { activeElement: main } as unknown as Document;
+  expect(getTerminalFocusOwner()).toBe("main");
+  expect(isTerminalFocused()).toBe(true);
+});
