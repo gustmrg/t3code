@@ -63,27 +63,53 @@ Settings changes between retries cannot implicitly terminate a live PTY.
 
 ## Presentation and execution lifetimes
 
-The main terminal surface is reconstructed from the binding, placed first, and protected from close,
+The main terminal surface is reconstructed from the binding, placed first, and protected from bulk close operations,
 close others, close to right, close all and process-exit cleanup. Files, diffs and previews use existing
-central surfaces. In-workspace file links from the main terminal also open these surfaces. Cmd/Ctrl+J,
-the header and palette focus the same principal. New/split terminal actions are suppressed for bound
-sessions; traditional threads retain multiple terminals and their drawer.
+central surfaces. In-workspace file links from the main terminal also open these surfaces.
+The terminal header toggle, Cmd/Ctrl+J and palette action open the auxiliary bottom drawer.
+New-terminal actions in bound sessions also target that drawer; splits operate on its auxiliary
+terminals, never on the main terminal. Main and drawer renderers have separate focus requests.
+Legacy auxiliary central tabs move into the drawer without PTY close or restart operations.
+The main terminal ID is reserved during allocation and excluded from drawer reconciliation.
+Workspace visibility follows the panel store, with a reopening placeholder when hidden.
+
+Sidebar rows and search results use the main terminal metadata for provider identification, never
+the structured chat model preference. A verified native identity takes precedence over command labels and startup preferences. Without
+verified metadata the model and agent state are unavailable; auxiliary terminals never supply them.
 
 The main renderer attaches with `existingOnly`. Missing resources load retained history into an
-inactive session without spawning; exited resources remain exited. Mount, reload, tab changes and
-reconnect never launch an agent. **Start terminal** and **Restart terminal** are explicit recovery
-operations using the same binding and the server's current project/worktree and provider context.
-Restarting a live terminal uses the existing confirmation mechanism. Closing a sheet affects only
+inactive session without spawning; exited resources remain exited. The renderer itself never launches an agent. On thread selection, ChatView requests an explicit
+resume on capable environments; the server reuses live processes without resubmitting commands. The main terminal has no start/restart toolbar. Closing a sheet affects only
 presentation; its fallback offers reopening the workspace, never a hidden structured composer.
 Deleting a thread retains the existing process cleanup path.
 
 The PTY does not survive backend termination. The binding and persisted history do, but neither is a
-promise to resume the provider conversation. There is no external multiplexer or supervisor.
+promise that the provider history is still available. There is no external multiplexer or supervisor.
+
+## Native Codex observation and resume
+
+Linux environments advertise `terminalSessionResume`. The existing subprocess inspection loop reads
+only rollout files held open under `/proc/<descendant pid>/fd` of the main PTY. Exactly one CLI
+`session_meta` identity must match; it never selects the newest file or matches only by cwd. Native
+`turn_context` records supply the model, and `task_started`, `task_complete`, and `turn_aborted` supply
+working/idle transitions. Missing ownership, ambiguous matches and replayed historical state report
+unknown. Reads are incremental and bounded; terminal output and prompts are not parsed or copied.
+
+A `.session.json` sidecar beside terminal history stores the native ID, rollout path and last metadata.
+This is environment-local runtime metadata, separate from the durable workspace binding. Closing the
+main tab captures pending metadata, stops its PTY under the thread lock, retains history, and leaves
+auxiliary shells alone. The client lands on a closed-session screen rather than creating a new thread.
+
+Reopening validates the recorded rollout ID and submits `codex resume <id>` with its original
+`CODEX_HOME` and last observed model. Launch and resume share the existing generation guards and thread
+lock, so duplicate requests cannot submit twice. Missing records, unsupported startup providers and
+unsafe nested CLI arguments fail rather than start another conversation. Thread deletion removes the
+sidecar. Non-Linux environments and providers other than configured Codex do not support automatic
+resume yet. No hooks or changes to provider configuration are installed.
 
 ## Future native conversation view
 
-The main terminal toolbar selects **Terminal** and renders a disabled **Chat — Coming soon** control
-with visible and accessible explanation. It has no command, event-bus action or persisted Chat mode.
+Terminal workspaces have no Terminal/Chat switch or persisted Chat mode.
 No structured adapter is started as a second execution of the terminal session.
 
 A future `NativeConversationRef` must associate the owning environment, provider instance and native
@@ -91,4 +117,4 @@ conversation ID with the correct execution. That native ID differs from thread I
 and provider-instance ID. It must be discovered reliably from the provider, not invented or inferred
 from ANSI output. Structured history reading is the first integration step and may initially be
 read-only. Shared input and bidirectional control require actual provider support and a single-writer
-policy. No parser, watcher, importer, empty adapter or speculative RPC is implemented here.
+policy. The native terminal observer above only supplies identity and status; it does not import conversation history.

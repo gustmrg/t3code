@@ -23,6 +23,7 @@ import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
@@ -30,8 +31,11 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import { expect } from "vite-plus/test";
 
 import * as ProcessRunner from "../processRunner.ts";
+import { makeCodexTerminalSessions, type CodexTerminalSessions } from "./CodexTerminalSession.ts";
 import * as TerminalManager from "./Manager.ts";
 import * as PtyAdapter from "./PtyAdapter.ts";
+
+const encodeTestJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 class WaitForConditionError extends Data.TaggedError("WaitForConditionError")<{
   readonly message: string;
@@ -205,6 +209,7 @@ const multiTerminalHistoryLogPath = (
   );
 
 interface CreateManagerOptions {
+  nativeSessions?: CodexTerminalSessions;
   shellResolver?: () => string;
   env?: NodeJS.ProcessEnv;
   subprocessInspector?: (terminalPid: number) => Effect.Effect<{
@@ -245,6 +250,7 @@ const createManager = (
         logsDir,
         historyLineLimit,
         ptyAdapter,
+        ...(options.nativeSessions ? { nativeSessions: options.nativeSessions } : {}),
         ...(options.shellResolver !== undefined ? { shellResolver: options.shellResolver } : {}),
         ...(options.env !== undefined ? { env: options.env } : {}),
         ...(options.subprocessInspector !== undefined
@@ -605,6 +611,142 @@ it.layer(
       });
       expect(snapshot.status).toBe("running");
       expect(snapshot.agentLaunch?.status).toBe("failed");
+    }),
+  );
+
+  it.effect(
+    "publishes observed main-terminal metadata without attributing it to auxiliary shells",
+    () =>
+      Effect.gen(function* () {
+        const observed = {
+          provider: "codex" as const,
+          sessionId: "12345678-1234-1234-1234-123456789abc",
+          model: "gpt-5.6-luna",
+          state: "working" as const,
+        };
+        const tracker = yield* makeCodexTerminalSessions();
+        const { manager } = yield* createManager(5, {
+          subprocessInspector: () =>
+            Effect.succeed({
+              hasRunningSubprocess: true,
+              childCommand: "codex",
+              processIds: [123],
+            }),
+          subprocessPollIntervalMs: 20,
+          nativeSessions: { ...tracker, observe: () => Effect.succeed(observed) },
+        });
+        const receipt = yield* Deferred.make<void>();
+        yield* manager.subscribe((event) =>
+          event.type === "activity" && event.terminalId === DEFAULT_TERMINAL_ID
+            ? Deferred.succeed(receipt, undefined).pipe(Effect.asVoid)
+            : Effect.void,
+        );
+        yield* manager.open(openInput(), true);
+        yield* manager.open({ ...openInput(), terminalId: "term-2" });
+        yield* Deferred.await(receipt);
+        expect((yield* manager.open(openInput(), true)).agentSession).toEqual(observed);
+        expect(
+          (yield* manager.open({ ...openInput(), terminalId: "term-2" })).agentSession,
+        ).toBeUndefined();
+      }),
+  );
+
+  it.effect("refuses resume without a verified session and does not spawn a replacement", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      const result = yield* manager
+        .openAgent(
+          { ...openInput(), resumeSession: true },
+          {
+            launch: {
+              threadId: "thread-1",
+              terminalId: DEFAULT_TERMINAL_ID,
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              displayName: "Codex",
+              driverKind: "codex",
+              command: "codex",
+              args: [],
+            },
+            available: Effect.succeed(true),
+          },
+          true,
+        )
+        .pipe(Effect.flip);
+      expect(result._tag).toBe("TerminalResumeError");
+      expect(ptyAdapter.spawnInputs).toHaveLength(0);
+    }),
+  );
+
+  it.effect("closes a main terminal without deleting identity, then resumes it exactly once", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, logsDir, baseDir } = yield* createManager(5, {
+        shellResolver: () => "/bin/bash",
+        subprocessInspector: () =>
+          Effect.succeed({ hasRunningSubprocess: false, childCommand: null, processIds: [] }),
+      });
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const id = "12345678-1234-1234-1234-123456789abc";
+      const home = path.join(baseDir, "codex-home");
+      const rollout = path.join(home, "sessions", "2026", "rollout-session.jsonl");
+      yield* fs.makeDirectory(path.dirname(rollout), { recursive: true });
+      yield* fs.writeFileString(
+        rollout,
+        encodeTestJson({ type: "session_meta", payload: { id, source: "cli" } }) + "\n",
+      );
+      const association = path.join(
+        logsDir,
+        `terminal_${Encoding.encodeBase64Url("thread-1")}_${Encoding.encodeBase64Url(DEFAULT_TERMINAL_ID)}.session.json`,
+      );
+      yield* fs.writeFileString(
+        association,
+        encodeTestJson({
+          path: rollout,
+          session: { provider: "codex", sessionId: id, model: "gpt-5.6-luna", state: "idle" },
+        }),
+      );
+      const target = {
+        launch: {
+          threadId: "thread-1",
+          terminalId: DEFAULT_TERMINAL_ID,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          displayName: "Codex",
+          driverKind: "codex",
+          command: "codex",
+          args: [],
+        },
+        available: Effect.succeed(true),
+      };
+      yield* manager.openAgent(openInput(), target, true);
+      yield* manager.open({ ...openInput(), terminalId: "term-2" });
+      yield* manager.close({ threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID });
+      expect(ptyAdapter.processes[0]?.killSignals).toContain("SIGKILL");
+      expect(ptyAdapter.processes[1]?.killed).toBe(false);
+      expect(yield* fs.exists(association)).toBe(true);
+      const unavailable = yield* manager
+        .openAgent(
+          { ...openInput(), resumeSession: true },
+          { ...target, available: Effect.succeed(false) },
+          true,
+        )
+        .pipe(Effect.flip);
+      expect(unavailable._tag).toBe("TerminalResumeError");
+      expect(ptyAdapter.spawnInputs).toHaveLength(2);
+
+      yield* Effect.all(
+        [
+          manager.openAgent({ ...openInput(), resumeSession: true }, target, true),
+          manager.openAgent({ ...openInput(), resumeSession: true }, target, true),
+        ],
+        { concurrency: "unbounded" },
+      );
+      expect(ptyAdapter.spawnInputs).toHaveLength(3);
+      expect(ptyAdapter.processes[2]?.writes).toEqual([
+        `'codex' 'resume' '${id}' '--model' 'gpt-5.6-luna'\r`,
+      ]);
+      expect(ptyAdapter.spawnInputs[2]?.env.CODEX_HOME).toBe(home);
+      yield* manager.close({ threadId: "thread-1", deleteHistory: true });
+      expect(yield* fs.exists(association)).toBe(false);
     }),
   );
 

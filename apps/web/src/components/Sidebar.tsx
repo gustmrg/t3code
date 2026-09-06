@@ -173,7 +173,8 @@ import {
   shouldShowInstanceBadge,
   type ProviderInstanceEntry,
 } from "../providerInstances";
-import { useThreadRunningTerminalIds } from "../state/terminalSessions";
+import { terminalWorkspaceIdentity } from "../lib/terminalWorkspaceIdentity";
+import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -350,6 +351,12 @@ function SidebarThreadTooltip({
                   ? `${modelLabel} · ${providerEntry.displayName}`
                   : modelLabel}
               </div>
+            </div>
+          ) : null}
+          {thread.terminalWorkspace && !driverKind ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <TerminalIcon className="size-3 shrink-0" />
+              <div className="min-w-0 truncate text-foreground/75">{modelLabel}</div>
             </div>
           ) : null}
           {terminalStatus ? (
@@ -784,6 +791,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
     threadId: thread.id,
+    ...(thread.terminalWorkspace ? { terminalId: thread.terminalWorkspace.mainTerminalId } : {}),
   });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const terminalProcessCount = runningTerminalIds.length;
@@ -814,7 +822,30 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Same semantics as the legacy sidebar (never-visited counts as read):
   // switching sidebars must not light up every historical thread as unread.
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
-  const status = resolveSidebarThreadStatus(thread);
+  const terminalSessions = useKnownTerminalSessions({
+    environmentId: thread.terminalWorkspace ? thread.environmentId : null,
+    threadId: thread.id,
+  });
+  const terminalIdentity = thread.terminalWorkspace
+    ? terminalWorkspaceIdentity(
+        thread.terminalWorkspace,
+        terminalSessions.find(
+          (session) => session.target.terminalId === thread.terminalWorkspace?.mainTerminalId,
+        )?.state.summary ?? null,
+        props.providerEntryByInstanceId,
+      )
+    : null;
+  const mainTerminalSummary = terminalSessions.find(
+    (session) => session.target.terminalId === thread.terminalWorkspace?.mainTerminalId,
+  )?.state.summary;
+  const nativeTerminalState =
+    mainTerminalSummary?.agentSession?.state ??
+    (mainTerminalSummary?.status === "exited" ? "stopped" : "unknown");
+  const status = thread.terminalWorkspace
+    ? nativeTerminalState === "working"
+      ? "working"
+      : "ready"
+    : resolveSidebarThreadStatus(thread);
   // A woken thread reappears at its original position (the sort is
   // deliberately static), so the pill has to carry the weight. Snoozing is
   // an explicit act, so the pill clears only when the user re-engages:
@@ -845,8 +876,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Status hues follow the system-wide convention set by sidebar v1 and the
   // mobile Live Activity/widgets (amber approval, indigo input, sky working)
   // so a thread reads the same color everywhere it surfaces.
-  const topStatus =
-    status === "working"
+  const topStatus = thread.terminalWorkspace
+    ? {
+        label: { working: "Working", idle: "Idle", stopped: "Stopped", unknown: "Unknown" }[
+          nativeTerminalState
+        ],
+        icon: nativeTerminalState === "working" ? ("working" as const) : null,
+        className:
+          nativeTerminalState === "working"
+            ? "text-sky-600 dark:text-sky-400"
+            : "text-muted-foreground",
+      }
+    : status === "working"
       ? {
           label: "Working",
           icon: "working" as const,
@@ -937,7 +978,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   ]);
 
   const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
-  const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
+  const providerEntry = terminalIdentity
+    ? terminalIdentity.provider
+    : (props.providerEntryByInstanceId.get(modelInstanceId) ?? null);
   const driverKind = providerEntry?.driverKind ?? null;
   const showInstanceBadge =
     providerEntry !== null &&
@@ -945,9 +988,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const selectedModel = providerEntry?.models.find(
     (model) => model.slug === thread.modelSelection.model,
   );
-  const modelLabel = selectedModel
-    ? getTriggerDisplayModelLabel(selectedModel)
-    : thread.modelSelection.model;
+  const modelLabel = terminalIdentity
+    ? terminalIdentity.label
+    : selectedModel
+      ? getTriggerDisplayModelLabel(selectedModel)
+      : thread.modelSelection.model;
 
   const isRemote =
     props.currentEnvironmentId !== null && thread.environmentId !== props.currentEnvironmentId;
@@ -1645,20 +1690,38 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     activeThreadBranch: thread.branch,
     currentGitBranch: gitStatus.data?.refName ?? null,
   });
+  const terminalSessions = useKnownTerminalSessions({
+    environmentId: thread.terminalWorkspace ? thread.environmentId : null,
+    threadId: thread.id,
+  });
+  const terminalIdentity = thread.terminalWorkspace
+    ? terminalWorkspaceIdentity(
+        thread.terminalWorkspace,
+        terminalSessions.find(
+          (session) => session.target.terminalId === thread.terminalWorkspace?.mainTerminalId,
+        )?.state.summary ?? null,
+        props.providerEntryByInstanceId,
+      )
+    : null;
   const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
-  const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
+  const providerEntry = terminalIdentity
+    ? terminalIdentity.provider
+    : (props.providerEntryByInstanceId.get(modelInstanceId) ?? null);
   const showInstanceBadge =
     providerEntry !== null &&
     shouldShowInstanceBadge(providerEntry, props.providerEntryByInstanceId.values());
   const selectedModel = providerEntry?.models.find(
     (model) => model.slug === thread.modelSelection.model,
   );
-  const modelLabel = selectedModel
-    ? getTriggerDisplayModelLabel(selectedModel)
-    : thread.modelSelection.model;
+  const modelLabel = terminalIdentity
+    ? terminalIdentity.label
+    : selectedModel
+      ? getTriggerDisplayModelLabel(selectedModel)
+      : thread.modelSelection.model;
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
     threadId: thread.id,
+    ...(thread.terminalWorkspace ? { terminalId: thread.terminalWorkspace.mainTerminalId } : {}),
   });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   return (

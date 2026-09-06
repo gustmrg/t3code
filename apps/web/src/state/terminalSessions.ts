@@ -85,6 +85,8 @@ export function useKnownTerminalSessions(input: {
 export function useThreadRunningTerminalIds(input: {
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
+  readonly terminalId?: string;
 }): ReadonlyArray<string> {
-  return selectRunningSubprocessTerminalIds(useKnownTerminalSessions(input));
+  const ids = selectRunningSubprocessTerminalIds(useKnownTerminalSessions(input));
+  return input.terminalId ? ids.filter((id) => id === input.terminalId) : ids;
 }

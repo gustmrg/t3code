@@ -54,6 +54,14 @@ const TerminalSessionInput = Schema.Struct({
 });
 export type TerminalSessionInput = Schema.Codec.Encoded<typeof TerminalSessionInput>;
 
+export const TerminalAgentSession = Schema.Struct({
+  provider: Schema.Literal("codex"),
+  sessionId: TrimmedNonEmptyStringSchema,
+  model: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  state: Schema.Literals(["unknown", "working", "idle", "stopped"]),
+});
+export type TerminalAgentSession = typeof TerminalAgentSession.Type;
+
 export const TerminalOpenInput = Schema.Struct({
   ...TerminalSessionInput.fields,
   cwd: TrimmedNonEmptyStringSchema,
@@ -62,6 +70,7 @@ export const TerminalOpenInput = Schema.Struct({
   rows: Schema.optional(TerminalRowsSchema),
   env: Schema.optional(TerminalEnvSchema),
   agentLaunch: Schema.optional(TerminalAgentLaunchIntent),
+  resumeSession: Schema.optional(Schema.Boolean),
 });
 export type TerminalOpenInput = typeof TerminalOpenInput.Type;
 
@@ -126,6 +135,7 @@ export const TerminalSessionSnapshot = Schema.Struct({
   /** Server-computed display title (idle shell vs subprocess command). */
   label: Schema.String.check(Schema.isMaxLength(128)),
   agentLaunch: Schema.optional(TerminalAgentLaunchResult),
+  agentSession: Schema.optional(TerminalAgentSession),
   updatedAt: Schema.String,
   sequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
@@ -144,6 +154,7 @@ export const TerminalSummary = Schema.Struct({
   /** Server-computed display title (idle shell vs subprocess command). */
   label: Schema.String.check(Schema.isMaxLength(128)),
   agentLaunch: Schema.optional(TerminalAgentLaunchResult),
+  agentSession: Schema.optional(TerminalAgentSession),
   updatedAt: Schema.String,
 });
 export type TerminalSummary = typeof TerminalSummary.Type;
@@ -363,7 +374,17 @@ export class TerminalResizeError extends Schema.TaggedErrorClass<TerminalResizeE
   }
 }
 
+export class TerminalResumeError extends Schema.TaggedErrorClass<TerminalResumeError>()(
+  "TerminalResumeError",
+  { threadId: Schema.String, terminalId: Schema.String, detail: Schema.String },
+) {
+  override get message() {
+    return this.detail;
+  }
+}
+
 export const TerminalError = Schema.Union([
+  TerminalResumeError,
   TerminalCwdError,
   TerminalHistoryError,
   TerminalSessionLookupError,

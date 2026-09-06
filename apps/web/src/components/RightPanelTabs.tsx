@@ -44,6 +44,7 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 
 interface RightPanelTabsProps {
   mainTerminalId?: string | undefined;
+  mainTerminalClosable?: boolean;
   onUseAsMainTerminal?: ((terminalId: string) => void) | undefined;
   mode: PreviewPanelMode;
   maximized?: boolean;
@@ -615,7 +616,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddBrowser,
     },
     {
-      label: props.mainTerminalId ? "Open terminal" : "Terminal",
+      label: "Terminal",
       icon: TerminalSquare,
       shortcut: "T",
       available: props.terminalAvailable,
@@ -677,7 +678,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       if (surfaceIndex < 0) return;
 
       const protectedMain =
-        surface.kind === "terminal" && surface.terminalIds.includes(props.mainTerminalId ?? "");
+        !props.mainTerminalClosable &&
+        surface.kind === "terminal" &&
+        surface.terminalIds.includes(props.mainTerminalId ?? "");
       const items: ContextMenuItem<TabContextMenuAction>[] = [];
       if (surface.kind === "terminal" && !props.mainTerminalId && props.onUseAsMainTerminal) {
         items.push({ id: "use-as-main", label: "Use as main terminal" });
@@ -770,7 +773,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       if (event.button !== 1) return;
       event.preventDefault();
       event.stopPropagation();
-      if (surface.kind !== "terminal" || !surface.terminalIds.includes(props.mainTerminalId ?? ""))
+      if (
+        props.mainTerminalClosable ||
+        surface.kind !== "terminal" ||
+        !surface.terminalIds.includes(props.mainTerminalId ?? "")
+      )
         props.onCloseSurface(surface);
     },
     [props],
@@ -835,7 +842,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                       : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                   )}
                 >
-                  {surface.kind === "terminal" &&
+                  {!props.mainTerminalClosable &&
+                  surface.kind === "terminal" &&
                   surface.terminalIds.includes(props.mainTerminalId ?? "") ? (
                     <TerminalSquare className="size-3 shrink-0" />
                   ) : (

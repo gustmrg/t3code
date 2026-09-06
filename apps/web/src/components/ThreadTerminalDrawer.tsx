@@ -7,7 +7,8 @@ import {
 import { type TerminalSessionState } from "@t3tools/client-runtime/state/terminal";
 import {
   Plus,
-  Square,
+  Maximize2,
+  Minimize2,
   SquareSplitHorizontal,
   SquareSplitVertical,
   TerminalSquare,
@@ -1104,6 +1105,8 @@ export default function ThreadTerminalDrawer({
   terminalWorkspaceSession = false,
 }: ThreadTerminalDrawerProps) {
   const isPanel = mode === "panel";
+  const [maximized, setMaximized] = useState(false);
+  const drawerMaximized = !isPanel && maximized;
   const [advancedTypography] = useLocalStorage(
     TYPOGRAPHY_ADVANCED_STORAGE_KEY,
     false,
@@ -1254,9 +1257,6 @@ export default function ThreadTerminalDrawer({
     resolvedTerminalGroups[resolvedActiveGroupIndex]?.splitDirection ?? "horizontal";
   const hasTerminalSidebar = normalizedTerminalIds.length > 1;
   const isSplitView = visibleTerminalIds.length > 1;
-  const showGroupHeaders =
-    resolvedTerminalGroups.length > 1 ||
-    resolvedTerminalGroups.some((terminalGroup) => terminalGroup.terminalIds.length > 1);
   const hasReachedSplitLimit = visibleTerminalIds.length >= MAX_TERMINALS_PER_GROUP;
   const terminalLabelById = useMemo(() => {
     const next = new Map<string, string>();
@@ -1416,17 +1416,28 @@ export default function ThreadTerminalDrawer({
     };
   }, [syncHeight]);
 
+  const maximizeControl = !isPanel ? (
+    <TerminalActionButton
+      className="inline-flex items-center justify-center p-1 text-foreground/90 hover:bg-accent"
+      label={drawerMaximized ? "Restore terminal drawer" : "Maximize terminal drawer"}
+      onClick={() => setMaximized((value) => !value)}
+    >
+      {drawerMaximized ? <Minimize2 className="size-3.25" /> : <Maximize2 className="size-3.25" />}
+    </TerminalActionButton>
+  ) : null;
+
   if (normalizedTerminalIds.length === 0) {
     return (
       <aside
         data-terminal-owner={isPanel ? "right-panel" : "drawer"}
         className={cn(
-          "thread-terminal-drawer relative flex min-w-0 flex-col overflow-hidden bg-background",
+          "thread-terminal-drawer flex min-w-0 flex-col overflow-hidden bg-background",
+          drawerMaximized ? "absolute inset-0 z-[60]" : "relative",
           isPanel ? "h-full flex-1" : "shrink-0 border-t border-border/80",
         )}
-        style={isPanel ? undefined : { height: `${drawerHeight}px` }}
+        style={isPanel || drawerMaximized ? undefined : { height: `${drawerHeight}px` }}
       >
-        {!isPanel ? (
+        {!isPanel && !drawerMaximized ? (
           <div
             className="absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize"
             onPointerDown={handleResizePointerDown}
@@ -1435,6 +1446,7 @@ export default function ThreadTerminalDrawer({
             onPointerCancel={handleResizePointerEnd}
           />
         ) : null}
+        <div className="absolute right-2 top-2 z-20">{maximizeControl}</div>
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm text-muted-foreground">
           <p>No terminal sessions for this thread yet.</p>
           <Button size="xs" variant="outline" onClick={onNewTerminalAction}>
@@ -1451,12 +1463,13 @@ export default function ThreadTerminalDrawer({
     <aside
       data-terminal-owner={isPanel ? "right-panel" : "drawer"}
       className={cn(
-        "thread-terminal-drawer relative flex min-w-0 flex-col overflow-hidden bg-background",
+        "thread-terminal-drawer flex min-w-0 flex-col overflow-hidden bg-background",
+        drawerMaximized ? "absolute inset-0 z-[60]" : "relative",
         isPanel ? "h-full flex-1" : "shrink-0 border-t border-border/80",
       )}
-      style={isPanel ? undefined : { height: `${drawerHeight}px` }}
+      style={isPanel || drawerMaximized ? undefined : { height: `${drawerHeight}px` }}
     >
-      {!isPanel ? (
+      {!isPanel && !drawerMaximized ? (
         <div
           className="absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize"
           onPointerDown={handleResizePointerDown}
@@ -1469,6 +1482,7 @@ export default function ThreadTerminalDrawer({
       {!terminalWorkspaceSession && !hasTerminalSidebar && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
           <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
+            {maximizeControl}
             <TerminalActionButton
               className={`p-1 text-foreground/90 transition-colors ${
                 hasReachedSplitLimit
@@ -1574,7 +1588,7 @@ export default function ThreadTerminalDrawer({
                           onAddTerminalContext={onAddTerminalContext}
                           focusRequestId={focusRequestId}
                           autoFocus={terminalId === resolvedActiveTerminalId}
-                          resizeEpoch={resizeEpoch}
+                          resizeEpoch={resizeEpoch + (drawerMaximized ? 1 : 0)}
                           drawerHeight={drawerHeight}
                           keybindings={keybindings}
                         />
@@ -1607,7 +1621,7 @@ export default function ThreadTerminalDrawer({
                   onAddTerminalContext={onAddTerminalContext}
                   focusRequestId={focusRequestId}
                   autoFocus
-                  resizeEpoch={resizeEpoch}
+                  resizeEpoch={resizeEpoch + (drawerMaximized ? 1 : 0)}
                   drawerHeight={drawerHeight}
                   keybindings={keybindings}
                 />
@@ -1625,6 +1639,7 @@ export default function ThreadTerminalDrawer({
                 }
               >
                 <div className="inline-flex h-full items-stretch">
+                  {maximizeControl}
                   <TerminalActionButton
                     className={`inline-flex h-full items-center px-1 text-foreground/90 transition-colors ${
                       hasReachedSplitLimit
@@ -1666,48 +1681,12 @@ export default function ThreadTerminalDrawer({
 
               <div className="min-h-0 flex-1 overflow-y-auto px-1 py-1">
                 {resolvedTerminalGroups.map((terminalGroup) => {
-                  const isGroupActive =
-                    terminalGroup.terminalIds.includes(resolvedActiveTerminalId);
-                  const groupActiveTerminalId = isGroupActive
-                    ? resolvedActiveTerminalId
-                    : (terminalGroup.terminalIds[0] ?? resolvedActiveTerminalId);
-                  const terminalCount = terminalGroup.terminalIds.length;
-                  const isSplitGroup = terminalCount > 1;
-                  const groupLabel = !isSplitGroup
-                    ? "Single"
-                    : terminalGroup.splitDirection === "vertical"
-                      ? "Stacked"
-                      : "Side by side";
-                  const GroupIcon = !isSplitGroup
-                    ? Square
-                    : terminalGroup.splitDirection === "vertical"
-                      ? SquareSplitVertical
-                      : SquareSplitHorizontal;
-
                   return (
                     <div key={terminalGroup.id} className="pb-0.5">
-                      {showGroupHeaders && (
-                        <button
-                          type="button"
-                          className={`flex h-[22px] w-full cursor-pointer items-center gap-1 rounded px-1.5 text-[11px] ${
-                            isGroupActive
-                              ? "bg-accent/50 text-foreground"
-                              : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
-                          }`}
-                          onClick={() => onActiveTerminalChange(groupActiveTerminalId)}
-                        >
-                          <GroupIcon className="size-3 shrink-0" />
-                          <span className="min-w-0 flex-1 truncate text-left">{groupLabel}</span>
-                          <span className="text-muted-foreground/70 text-[10px] tabular-nums">
-                            {terminalCount}
-                          </span>
-                        </button>
-                      )}
-
                       <div className="flex flex-col gap-0.5">
                         {terminalGroup.terminalIds.map((terminalId) => {
                           const isActive = terminalId === resolvedActiveTerminalId;
-                          const terminalLabel = terminalLabelById.get(terminalId) ?? "Terminal";
+                          const terminalLabel = getTerminalLabel(terminalId);
                           const closeTerminalLabel = `Close ${terminalLabel}${
                             isActive && closeShortcutLabel ? ` (${closeShortcutLabel})` : ""
                           }`;

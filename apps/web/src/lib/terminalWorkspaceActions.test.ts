@@ -1,7 +1,12 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { focusMainTerminal, closeWorkspaceSurfaces } from "./terminalWorkspaceActions";
+import {
+  focusMainTerminal,
+  closeWorkspaceSurfaces,
+  moveAuxiliaryTerminalsToDrawer,
+} from "./terminalWorkspaceActions";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
+import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 const ref = { environmentId: EnvironmentId.make("a"), threadId: ThreadId.make("t") };
 const binding = { mainTerminalId: "term-7", startup: { _tag: "shell" as const } };
 const state = () => selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, ref);
@@ -29,6 +34,49 @@ describe("main terminal workspace actions", () => {
     useRightPanelStore.getState().ensureMainTerminal(ref, binding.mainTerminalId);
     expect(state().activeSurfaceId).toBe("file:file.ts");
     expect(state().surfaces[0]?.id).toBe("terminal:term-7");
+  });
+  it("can hide the workspace, add another shell, and return to the same main terminal", () => {
+    const store = useRightPanelStore.getState();
+    store.ensureMainTerminal(ref, binding.mainTerminalId);
+    store.toggleVisibility(ref);
+    expect(state().isOpen).toBe(false);
+    store.openTerminal(ref, "term-8");
+    expect(state().isOpen).toBe(true);
+    expect(state().activeSurfaceId).toBe("terminal:term-8");
+    focusMainTerminal({ ref, binding, ensure: store.ensureMainTerminal, focus: vi.fn() });
+    expect(state().activeSurfaceId).toBe("terminal:term-7");
+    expect(state().surfaces).toHaveLength(2);
+  });
+  it("moves auxiliary tabs into the drawer while preserving the main and file surfaces", () => {
+    const store = useRightPanelStore.getState();
+    const drawer = useTerminalUiStateStore.getState();
+    drawer.removeTerminalUiState(ref);
+    store.ensureMainTerminal(ref, binding.mainTerminalId);
+    store.openTerminal(ref, "term-8");
+    store.splitTerminal(ref, "terminal:term-8", "term-9", "horizontal");
+    store.openFile(ref, "file.ts");
+    const move = vi.fn((id: string) => drawer.ensureTerminal(ref, id));
+    const migrate = () =>
+      moveAuxiliaryTerminalsToDrawer({
+        surfaces: state().surfaces,
+        binding,
+        move,
+        removeSurface: (surface) => store.closeSurface(ref, surface.id),
+      });
+    migrate();
+    migrate();
+    expect(move.mock.calls.map(([id]) => id)).toEqual(["term-8", "term-9"]);
+    expect(
+      selectThreadTerminalUiState(
+        useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+        ref,
+      ).terminalIds,
+    ).toEqual(["term-8", "term-9"]);
+    expect(state().surfaces.map((surface) => surface.id)).toEqual([
+      "terminal:term-7",
+      "file:file.ts",
+    ]);
+    expect(state().activeSurfaceId).toBe("file:file.ts");
   });
   it("filters the principal before cleanup even when a file is active and close-all is requested", () => {
     const store = useRightPanelStore.getState();

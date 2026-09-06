@@ -22,6 +22,22 @@ import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
   const { environments } = useEnvironments();
+  const { sessionClosed } = Route.useSearch();
+  if (sessionClosed) {
+    return (
+      <SidebarInset className="h-dvh min-h-0">
+        <WorkspacePageHeader>Session closed</WorkspacePageHeader>
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>Session closed</EmptyTitle>
+            <EmptyDescription>
+              Select the thread in the sidebar to resume its session.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </SidebarInset>
+    );
+  }
 
   if (authGateState.status === "hosted-static" && environments.length === 0) {
     return <HostedStaticOnboardingState />;
@@ -133,6 +149,8 @@ function NoProjectsHero() {
 }
 
 export const Route = createFileRoute("/_chat/")({
+  validateSearch: (search: Record<string, unknown>): { sessionClosed?: boolean } =>
+    search.sessionClosed === true ? { sessionClosed: true } : {},
   component: ChatIndexRouteView,
 });
 

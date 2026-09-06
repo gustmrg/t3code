@@ -33,3 +33,17 @@ export function closeWorkspaceSurfaces(input: {
   input.cleanup(closable);
   closable.forEach(input.close);
 }
+
+/** Move auxiliary tabs without closing or restarting their terminal processes. */
+export function moveAuxiliaryTerminalsToDrawer(input: {
+  surfaces: readonly RightPanelSurface[];
+  binding: TerminalWorkspaceBinding;
+  move: (terminalId: string) => void;
+  removeSurface: (surface: RightPanelSurface) => void;
+}): void {
+  for (const surface of input.surfaces) {
+    if (surface.kind !== "terminal" || isMainTerminalSurface(surface, input.binding)) continue;
+    surface.terminalIds.forEach(input.move);
+    input.removeSurface(surface);
+  }
+}

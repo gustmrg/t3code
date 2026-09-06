@@ -151,6 +151,7 @@ export const make = Effect.gen(function* () {
       threadSettlement: true,
       threadSnooze: true,
       terminalWorkspaceSessions: true,
+      terminalSessionResume: hostPlatform === "linux",
       threadPinning: true,
       threadPinReorder: true,
       threadTitleRegeneration: true,

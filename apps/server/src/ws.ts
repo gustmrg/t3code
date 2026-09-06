@@ -644,19 +644,24 @@ const makeWsRpcLayer = (
             displayName,
             "This provider does not support launching its CLI in a terminal.",
           );
-        return yield* terminalManager.openAgent(openInput, {
-          launch: {
-            threadId: input.threadId,
-            terminalId: input.terminalId,
-            providerInstanceId: launchIntent.providerInstanceId,
-            displayName,
-            command: launch.command,
-            args: launch.args,
+        return yield* terminalManager.openAgent(
+          openInput,
+          {
+            launch: {
+              threadId: input.threadId,
+              terminalId: input.terminalId,
+              providerInstanceId: launchIntent.providerInstanceId,
+              displayName,
+              command: launch.command,
+              driverKind: instance.driverKind,
+              args: launch.args,
+            },
+            available: isCommandAvailable(launch.command, {
+              env: { ...process.env, ...input.env, ...launchEnvironment },
+            }),
           },
-          available: isCommandAvailable(launch.command, {
-            env: { ...process.env, ...input.env, ...launchEnvironment },
-          }),
-        });
+          resolved.main,
+        );
       });
       const authorizeEffect = <A, E, R>(
         requiredScope: AuthEnvironmentScope,

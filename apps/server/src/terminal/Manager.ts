@@ -1,3 +1,9 @@
+import {
+  type CodexTerminalSessions,
+  makeCodexTerminalSessions,
+  codexResumeArgs,
+  sameAgentSession,
+} from "./CodexTerminalSession.ts";
 /**
  * TerminalManager - Terminal session orchestration service interface.
  *
@@ -16,6 +22,8 @@ import {
   TerminalHistoryError,
   TerminalNotRunningError,
   TerminalResizeError,
+  TerminalResumeError,
+  type TerminalAgentSession,
   TerminalSessionLookupError,
   TerminalWriteError,
   type TerminalAttachInput,
@@ -143,6 +151,7 @@ export class TerminalManager extends Context.Service<
     readonly openAgent: (
       input: TerminalOpenInput,
       target: TerminalAgentTarget,
+      mainTerminal?: boolean,
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
     /** Record a trusted provider launch outcome on an already-open shell. */
@@ -269,6 +278,7 @@ export interface TerminalAgentStartInput {
   readonly providerInstanceId: ProviderInstanceId;
   readonly displayName: string;
   readonly command: string;
+  readonly driverKind?: string;
   readonly args: ReadonlyArray<string>;
 }
 
@@ -305,6 +315,7 @@ export interface TerminalSessionState {
   childCommandLabel: string | null;
   shellCommand: string | null;
   agentLaunch: TerminalAgentLaunchResult | null;
+  agentSession?: TerminalAgentSession;
   generation: number;
   agentWriteAttempted: boolean;
   userInputReceived: boolean;
@@ -394,6 +405,7 @@ function snapshot(session: TerminalSessionState): TerminalSessionSnapshot {
     exitSignal: session.exitSignal,
     label: terminalWireLabel(session),
     ...(session.agentLaunch ? { agentLaunch: session.agentLaunch } : {}),
+    ...(session.agentSession ? { agentSession: session.agentSession } : {}),
     updatedAt: session.updatedAt,
     sequence: session.eventSequence,
   };
@@ -412,6 +424,7 @@ function summary(session: TerminalSessionState): TerminalSummary {
     hasRunningSubprocess: session.hasRunningSubprocess,
     label: terminalWireLabel(session),
     ...(session.agentLaunch ? { agentLaunch: session.agentLaunch } : {}),
+    ...(session.agentSession ? { agentSession: session.agentSession } : {}),
     updatedAt: session.updatedAt,
   };
 }
@@ -1196,6 +1209,7 @@ interface TerminalManagerOptions {
   env?: NodeJS.ProcessEnv;
   subprocessInspector?: TerminalSubprocessInspector;
   subprocessPollIntervalMs?: number;
+  nativeSessions?: CodexTerminalSessions;
   processKillGraceMs?: number;
   maxRetainedInactiveSessions?: number;
   registerTerminalProcesses?: (input: {
@@ -1286,6 +1300,25 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       }
     });
 
+  const nativeSessions = options.nativeSessions ?? (yield* makeCodexTerminalSessions());
+  const mainTerminals = new Set<string>();
+  const nativeSessionPath = (threadId: string, terminalId: string) =>
+    path.join(logsDir, `${toSafeThreadId(threadId)}_${toSafeTerminalId(terminalId)}.session.json`);
+  const nativeOperation = <A, E>(
+    threadId: string,
+    terminalId: string,
+    run: () => Effect.Effect<A, E>,
+  ) =>
+    run().pipe(
+      Effect.mapError(
+        () =>
+          new TerminalResumeError({
+            threadId,
+            terminalId,
+            detail: "Could not read or preserve the Codex session identity.",
+          }),
+      ),
+    );
   const historyPath = (threadId: string, terminalId: string) => {
     const threadPart = toSafeThreadId(threadId);
     if (terminalId === DEFAULT_TERMINAL_ID) {
@@ -1616,7 +1649,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           name.startsWith(threadPrefix),
       ),
       (name) =>
-        fileSystem.remove(path.join(logsDir, name), { force: true }).pipe(
+        (name.endsWith(".session.json")
+          ? nativeSessions.forget(path.join(logsDir, name))
+          : fileSystem.remove(path.join(logsDir, name), { force: true })
+        ).pipe(
           Effect.catch((error) =>
             Effect.logWarning("failed to delete terminal histories for thread", {
               threadId,
@@ -1767,6 +1803,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         session.shellCommand = null;
         session.agentLaunch = null;
         session.status = "exited";
+        if (session.agentSession)
+          session.agentSession = { ...session.agentSession, state: "stopped" };
         session.pendingHistoryControlSequence = "";
         session.pendingProcessEvents = [];
         session.pendingProcessEventIndex = 0;
@@ -2063,13 +2101,50 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const closedEventSequence = Option.isSome(session) ? session.value.eventSequence + 1 : 0;
 
     if (Option.isSome(session)) {
+      const process = session.value.process;
+      if (mainTerminals.has(key) && session.value.pid !== null && !deleteHistoryOnClose) {
+        // Capture the latest identity/model before terminating the process that owns the file.
+        yield* Effect.gen(function* () {
+          const inspector = yield* acquireSubprocessInspector;
+          const inspected = yield* inspector(session.value.pid!);
+          const observed = yield* nativeSessions.observe(
+            nativeSessionPath(threadId, terminalId),
+            inspected.processIds,
+          );
+          if (observed) session.value.agentSession = observed;
+        }).pipe(Effect.ignore);
+      }
       yield* stopProcess(session.value);
+      if (mainTerminals.has(key) && process) {
+        const pendingKill = (yield* readManagerState).killFibers.get(process);
+        if (pendingKill) yield* Fiber.join(pendingKill);
+      }
       yield* unregisterTerminal({ threadId, terminalId });
       yield* persistHistory(threadId, terminalId, session.value.history);
     }
 
     yield* flushPersist(threadId, terminalId);
 
+    if (mainTerminals.has(key) && !deleteHistoryOnClose && Option.isSome(session)) {
+      if (session.value.agentSession)
+        session.value.agentSession = { ...session.value.agentSession, state: "stopped" };
+      const stamp = advanceEventSequence(session.value);
+      yield* publishEvent({
+        type: "exited",
+        threadId,
+        terminalId,
+        sequence: stamp.sequence,
+        exitCode: session.value.exitCode,
+        exitSignal: session.value.exitSignal,
+      });
+      return;
+    }
+    if (deleteHistoryOnClose) {
+      mainTerminals.delete(key);
+      yield* nativeOperation(threadId, terminalId, () =>
+        nativeSessions.forget(nativeSessionPath(threadId, terminalId)),
+      );
+    }
     const removed = yield* modifyManagerState((state) => {
       if (!state.sessions.has(key)) {
         return [false, state] as const;
@@ -2146,6 +2221,18 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         processIds: next.processIds,
       });
       const nextChildLabel = next.hasRunningSubprocess ? next.childCommand : null;
+      const agentSession = mainTerminals.has(toSessionKey(session.threadId, session.terminalId))
+        ? yield* nativeOperation(session.threadId, session.terminalId, () =>
+            nativeSessions.observe(
+              nativeSessionPath(session.threadId, session.terminalId),
+              next.processIds,
+            ),
+          ).pipe(
+            Effect.orElseSucceed(() =>
+              session.agentSession ? { ...session.agentSession, state: "unknown" as const } : null,
+            ),
+          )
+        : null;
       const event = yield* modifyManagerState((state) => {
         const liveSession: Option.Option<TerminalSessionState> = Option.fromNullishOr(
           state.sessions.get(toSessionKey(session.threadId, session.terminalId)),
@@ -2155,13 +2242,15 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           liveSession.value.status !== "running" ||
           liveSession.value.pid !== terminalPid ||
           (liveSession.value.hasRunningSubprocess === next.hasRunningSubprocess &&
-            liveSession.value.childCommandLabel === nextChildLabel)
+            liveSession.value.childCommandLabel === nextChildLabel &&
+            sameAgentSession(liveSession.value.agentSession, agentSession))
         ) {
           return [Option.none(), state] as const;
         }
 
         liveSession.value.hasRunningSubprocess = next.hasRunningSubprocess;
         liveSession.value.childCommandLabel = nextChildLabel;
+        if (agentSession) liveSession.value.agentSession = agentSession;
         const eventStamp = advanceEventSequence(liveSession.value);
 
         return [
@@ -2182,10 +2271,14 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       }
     });
 
-    yield* Effect.forEach(runningSessions, checkSubprocessActivity, {
-      concurrency: "unbounded",
-      discard: true,
-    });
+    yield* Effect.forEach(
+      runningSessions,
+      (session) => withThreadLock(session.threadId, checkSubprocessActivity(session)),
+      {
+        concurrency: "unbounded",
+        discard: true,
+      },
+    );
   });
 
   const hasRunningSessions = readManagerState.pipe(
@@ -2247,6 +2340,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     if (Option.isNone(existing)) {
       yield* flushPersist(input.threadId, terminalId);
       const history = yield* readHistory(input.threadId, terminalId);
+      const retained = yield* nativeOperation(input.threadId, terminalId, () =>
+        nativeSessions.load(nativeSessionPath(input.threadId, terminalId)),
+      ).pipe(Effect.orElseSucceed(() => null));
       const cols = input.cols ?? DEFAULT_OPEN_COLS;
       const rows = input.rows ?? DEFAULT_OPEN_ROWS;
       const session: TerminalSessionState = {
@@ -2257,6 +2353,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         status: "starting",
         pid: null,
         history,
+        ...(retained ? { agentSession: retained.session } : {}),
         pendingHistoryControlSequence: "",
         pendingProcessEvents: [],
         pendingProcessEventIndex: 0,
@@ -2375,10 +2472,21 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       input.threadId,
       Effect.gen(function* () {
         if (preserveExisting) {
+          mainTerminals.add(toSessionKey(input.threadId, input.terminalId));
           const existing = yield* getSession(input.threadId, input.terminalId);
-          if (Option.isSome(existing) && existing.value.generation > 0)
+          if (
+            Option.isSome(existing) &&
+            existing.value.generation > 0 &&
+            (!input.resumeSession || existing.value.process)
+          )
             return snapshot(existing.value);
         }
+        if (input.resumeSession)
+          return yield* new TerminalResumeError({
+            ...input,
+            detail:
+              "Automatic resume requires a configured Codex main terminal and an identified session.",
+          });
         return yield* openLocked(input);
       }),
     );
@@ -2468,17 +2576,69 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const launchAgent: TerminalManager["Service"]["launchAgent"] = (input) =>
     withThreadLock(input.threadId, launchAgentLocked(input));
 
-  const openAgent: TerminalManager["Service"]["openAgent"] = (input, target) =>
+  const openAgent: TerminalManager["Service"]["openAgent"] = (
+    input,
+    target,
+    mainTerminal = false,
+  ) =>
     withThreadLock(
       input.threadId,
       Effect.gen(function* () {
+        if (mainTerminal) mainTerminals.add(toSessionKey(input.threadId, input.terminalId));
+        let resume: TerminalAgentSession | null = null;
+        let resumeArgs: ReadonlyArray<string> | null = null;
         const existing = yield* getSession(input.threadId, input.terminalId);
+        if (input.resumeSession) {
+          if (
+            Option.isSome(existing) &&
+            existing.value.process &&
+            existing.value.status === "running"
+          )
+            return snapshot(existing.value);
+          if (!mainTerminal || !("launch" in target) || target.launch.driverKind !== "codex")
+            return yield* new TerminalResumeError({
+              ...input,
+              detail:
+                "Automatic terminal resume is currently supported for configured Codex sessions only.",
+            });
+          const canResume = yield* target.available.pipe(
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+            Effect.provideService(Path.Path, path),
+          );
+          if (!canResume)
+            return yield* new TerminalResumeError({
+              ...input,
+              detail: "The Codex command was not found. The terminal remains stopped.",
+            });
+          const retained = yield* nativeOperation(input.threadId, input.terminalId, () =>
+            nativeSessions.resume(nativeSessionPath(input.threadId, input.terminalId)),
+          );
+          resume = retained?.session ?? null;
+          if (retained) input = { ...input, env: { ...input.env, CODEX_HOME: retained.home } };
+          if (!resume)
+            return yield* new TerminalResumeError({
+              ...input,
+              detail:
+                "No verified Codex session was found for this terminal. A different session will not be opened.",
+            });
+          resumeArgs = yield* Effect.try({
+            try: () => codexResumeArgs(target.launch.args, resume!),
+            catch: () =>
+              new TerminalResumeError({
+                ...input,
+                detail: "The configured Codex arguments cannot be safely resumed.",
+              }),
+          });
+        }
         if (Option.isSome(existing)) {
           const session = existing.value;
           // Check before openLocked can change cwd/env or restart an exited generation.
-          if (session.agentWriteAttempted || (!session.process && session.generation > 0))
+          if (
+            !input.resumeSession &&
+            (session.agentWriteAttempted || (!session.process && session.generation > 0))
+          )
             return snapshot(session);
-          if (session.generation === 0) yield* openLocked(input);
+          if (session.generation === 0 || input.resumeSession) yield* openLocked(input);
         } else {
           yield* openLocked(input);
         }
@@ -2487,10 +2647,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             ...input,
             result: { ...target.result, retryPolicy: "retry" },
           });
-        const available = yield* target.available.pipe(
-          Effect.provideService(FileSystem.FileSystem, fileSystem),
-          Effect.provideService(Path.Path, path),
-        );
+        const available =
+          input.resumeSession ||
+          (yield* target.available.pipe(
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+            Effect.provideService(Path.Path, path),
+          ));
         if (!available)
           return yield* recordAgentLaunchLocked({
             ...input,
@@ -2502,7 +2664,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               message: "The provider command was not found.",
             },
           });
-        return yield* launchAgentLocked(target.launch).pipe(
+        const launch = resumeArgs ? { ...target.launch, args: resumeArgs } : target.launch;
+        return yield* launchAgentLocked(launch).pipe(
           Effect.catch(() => {
             return Effect.map(requireSession(input.threadId, input.terminalId), snapshot);
           }),
@@ -2899,7 +3062,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         const threadSessions = yield* sessionsForThread(input.threadId);
         yield* Effect.forEach(
           threadSessions,
-          (session) => closeSession(input.threadId, session.terminalId, false),
+          (session) =>
+            closeSession(input.threadId, session.terminalId, input.deleteHistory === true),
           { discard: true },
         );
 

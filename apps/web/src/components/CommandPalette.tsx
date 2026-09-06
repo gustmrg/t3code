@@ -1560,8 +1560,12 @@ function OpenCommandPaletteDialog(props: {
         kind: "action",
         value: "action:workspace-terminal",
         searchTerms: ["workspace", "terminal", "shell", "panel", "full width"],
-        title: "Open Terminal as workspace",
-        description: "Use the terminal in the full-width primary panel.",
+        title: activeThread.terminalWorkspace
+          ? "Open terminal drawer"
+          : "Open Terminal as workspace",
+        description: activeThread.terminalWorkspace
+          ? "Open auxiliary terminals below the main workspace."
+          : "Use the terminal in the full-width primary panel.",
         icon: <SquareTerminalIcon className={ITEM_ICON_CLASS} />,
         run: async () => dispatchWorkspaceAction("open-terminal"),
       },
