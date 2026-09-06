@@ -380,6 +380,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          ...(command.terminalWorkspace !== undefined
+            ? { terminalWorkspace: command.terminalWorkspace }
+            : {}),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -814,6 +817,29 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (command.terminalWorkspace !== undefined) {
+        const binding = command.terminalWorkspace;
+        const current = thread.terminalWorkspace;
+        const same =
+          current &&
+          binding &&
+          current.mainTerminalId === binding.mainTerminalId &&
+          current.startup._tag === binding.startup._tag &&
+          (current.startup._tag !== "agent" ||
+            (binding.startup._tag === "agent" &&
+              current.startup.providerInstanceId === binding.startup.providerInstanceId));
+        if (
+          (current && !same) ||
+          (!current && binding && (thread.messages.length > 0 || thread.session !== null))
+        ) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: current
+              ? "The main terminal binding cannot be removed or replaced."
+              : "Only threads without structured history or a provider session can use a main terminal. Create a new terminal session.",
+          });
+        }
+      }
       const branch =
         command.branch !== undefined &&
         command.expectedBranch !== undefined &&
@@ -849,6 +875,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             ? { modelSelection: command.modelSelection }
             : {}),
           ...(branch !== undefined ? { branch } : {}),
+          ...(command.terminalWorkspace !== undefined
+            ? { terminalWorkspace: command.terminalWorkspace }
+            : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
           ...(command.linkedPullRequest !== undefined
             ? { linkedPullRequest: command.linkedPullRequest }
@@ -935,6 +964,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (targetThread.terminalWorkspace) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail:
+            "Chat for terminal workspace sessions is not available yet. Create a separate chat thread.",
+        });
+      }
       const sourceProposedPlan = command.sourceProposedPlan;
       const sourceThread = sourceProposedPlan
         ? yield* requireThread({

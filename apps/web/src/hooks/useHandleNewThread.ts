@@ -497,6 +497,20 @@ export function useNewThreadHandler() {
         ),
       });
       if (launchPreference.view === "chat") return openedDraft;
+      const supportsSessions =
+        environments.find((entry) => entry.environmentId === projectRef.environmentId)?.serverConfig
+          ?.environment.capabilities.terminalWorkspaceSessions === true;
+      if (!supportsSessions) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Server update required",
+            description:
+              "Update this environment to create terminal workspace sessions. You can still use this chat thread.",
+          }),
+        );
+        return openedDraft;
+      }
       if (launchPreference.fallback?._tag === "provider-unavailable") {
         toastManager.add(
           stackedThreadToast({
@@ -539,9 +553,17 @@ export function useNewThreadHandler() {
         randomHex,
       });
 
+      const creationLocation = router.state.location.href;
       const result = await coordinateTerminalFirstLaunch({
         threadRef,
-        materializeInput,
+        materializeInput: {
+          ...materializeInput,
+          terminalWorkspace: {
+            mainTerminalId: DEFAULT_THREAD_TERMINAL_ID,
+            startup: launchPreference.terminalStartup,
+          },
+        },
+        requiresWorktree: materializeInput.prepareWorktree !== undefined,
         operations: {
           materialize: async (input) => {
             const commandResult = await materializeThread({
@@ -555,6 +577,7 @@ export function useNewThreadHandler() {
           waitForThreadShell,
           navigateToThread: async (materializedThreadRef) => {
             markPromotedDraftThreadByRef(materializedThreadRef);
+            if (router.state.location.href !== creationLocation) return;
             await router.navigate({
               to: "/$environmentId/$threadId",
               params: {
@@ -566,19 +589,24 @@ export function useNewThreadHandler() {
           },
           terminalInput: (thread) => {
             const worktreePath = thread.worktreePath ?? null;
+            const binding = thread.terminalWorkspace;
+            if (!binding)
+              throw new Error(
+                "The server did not persist the main terminal. Update this environment before retrying.",
+              );
             return {
               threadId: thread.id,
-              terminalId: DEFAULT_THREAD_TERMINAL_ID,
+              terminalId: binding.mainTerminalId,
               cwd: worktreePath ?? project.workspaceRoot,
               ...(worktreePath ? { worktreePath } : {}),
               env: projectScriptRuntimeEnv({
                 project: { cwd: project.workspaceRoot },
                 worktreePath,
               }),
-              ...(launchPreference.terminalStartup._tag === "agent"
+              ...(binding.startup._tag === "agent"
                 ? {
                     agentLaunch: {
-                      providerInstanceId: launchPreference.terminalStartup.providerInstanceId,
+                      providerInstanceId: binding.startup.providerInstanceId,
                     },
                   }
                 : {}),
@@ -655,27 +683,40 @@ export function useNewThreadHandler() {
         const agentLaunch = result.terminal.agentLaunch;
         if (agentLaunch) {
           const showAgentLaunchFailure = (
+            currentLaunch: typeof agentLaunch,
             message: string,
             retryAgent: typeof result.retryAgent,
           ) => {
+            let retryPending = false;
             let toastId: ReturnType<typeof toastManager.add>;
             toastId = toastManager.add(
               stackedThreadToast({
                 type: "warning",
-                title: `${agentLaunch.displayName} did not start`,
+                title: `${currentLaunch.displayName} did not start`,
                 description: message,
                 actionProps: {
-                  children: "Try again",
+                  children:
+                    currentLaunch.retryPolicy === "restart-required"
+                      ? "Restart required"
+                      : "Try again",
+                  disabled: currentLaunch.retryPolicy === "restart-required",
                   onClick: () => {
+                    if (retryPending) return;
+                    retryPending = true;
                     void retryAgent().then((retryResult) => {
                       toastManager.close(toastId);
                       if (retryResult._tag === "Failure") {
-                        showAgentLaunchFailure(errorMessage(retryResult.error), retryAgent);
+                        showAgentLaunchFailure(
+                          currentLaunch,
+                          errorMessage(retryResult.error),
+                          retryAgent,
+                        );
                         return;
                       }
                       const retryLaunch = retryResult.value.agentLaunch;
                       if (retryLaunch && retryLaunch.status !== "started") {
                         showAgentLaunchFailure(
+                          retryLaunch,
                           retryLaunch.message ?? "The provider CLI could not be started.",
                           retryAgent,
                         );
@@ -709,6 +750,7 @@ export function useNewThreadHandler() {
             );
           };
           showAgentLaunchFailure(
+            agentLaunch,
             agentLaunch.message ?? "The provider CLI could not be started.",
             result.retryAgent,
           );

@@ -55,3 +55,15 @@ describe("thread content presentation", () => {
     });
   });
 });
+
+it("blocks terminal workspace conversation and composer presentation", () => {
+  expect(
+    projectThreadContentPresentation({
+      terminalWorkspace: { mainTerminalId: "term-1" },
+      hasDetail: true,
+      detailError: null,
+      detailDeleted: false,
+      connectionState: "connected",
+    }),
+  ).toMatchObject({ kind: "unavailable", title: "Terminal workspace" });
+});

@@ -15,6 +15,7 @@ export function isTerminalCloseConfirmPending(): boolean {
  */
 export async function confirmTerminalClose(
   labels: readonly [string, ...string[]],
+  operation: "close" | "restart" = "close",
 ): Promise<boolean> {
   const localApi = readLocalApi();
   if (!localApi) return true;
@@ -23,7 +24,7 @@ export async function confirmTerminalClose(
     return await localApi.dialogs.confirm(
       labels.length === 1
         ? [
-            `Close terminal "${labels[0]}"?`,
+            `${operation === "restart" ? "Restart" : "Close"} terminal "${labels[0]}"?`,
             "This stops the running process and clears its history.",
           ].join("\n")
         : [

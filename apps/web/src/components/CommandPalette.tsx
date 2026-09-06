@@ -1615,7 +1615,7 @@ function OpenCommandPaletteDialog(props: {
         description: workspacePanelMaximized
           ? "Show structured chat beside the current workspace panel."
           : "Chat and the workspace panel are already split.",
-        disabled: !workspacePanelMaximized,
+        disabled: !!activeThread.terminalWorkspace || !workspacePanelMaximized,
         icon: <PanelsTopLeftIcon className={ITEM_ICON_CLASS} />,
         run: async () => dispatchWorkspaceAction("restore-chat"),
       },

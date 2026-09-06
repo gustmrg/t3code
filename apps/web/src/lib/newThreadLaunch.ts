@@ -68,8 +68,14 @@ export type TerminalFirstLaunchResult =
     };
 
 export interface TerminalFirstLaunchOperations<MaterializeInput> {
-  readonly materialize: (input: MaterializeInput) => Promise<LaunchStepResult<unknown>>;
-  readonly waitForThreadShell: (threadRef: ScopedThreadRef) => Promise<OrchestrationThreadShell>;
+  readonly materialize: (
+    input: MaterializeInput,
+  ) => Promise<LaunchStepResult<{ readonly sequence: number }>>;
+  readonly waitForThreadShell: (
+    threadRef: ScopedThreadRef,
+    sequence: number,
+    signal?: AbortSignal,
+  ) => Promise<OrchestrationThreadShell>;
   readonly navigateToThread: (threadRef: ScopedThreadRef) => Promise<void>;
   readonly openTerminal: (
     input: TerminalOpenInput,
@@ -88,6 +94,8 @@ const inFlightTerminalLaunches = new Map<string, Promise<TerminalFirstLaunchResu
 export function coordinateTerminalFirstLaunch<MaterializeInput>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly materializeInput: MaterializeInput;
+  readonly signal?: AbortSignal;
+  readonly requiresWorktree?: boolean;
   readonly operations: TerminalFirstLaunchOperations<MaterializeInput>;
 }): Promise<TerminalFirstLaunchResult> {
   const threadKey = scopedThreadKey(input.threadRef);
@@ -95,19 +103,47 @@ export function coordinateTerminalFirstLaunch<MaterializeInput>(input: {
   if (existing) return existing;
 
   const launch = (async (): Promise<TerminalFirstLaunchResult> => {
-    const materialized = await input.operations.materialize(input.materializeInput);
+    const materialized = await input.operations
+      .materialize(input.materializeInput)
+      .catch((error) => ({ _tag: "Failure" as const, error }));
     if (materialized._tag === "Failure") {
       return { _tag: "MaterializeFailure", error: materialized.error };
     }
 
-    const thread = await input.operations.waitForThreadShell(input.threadRef);
-    await input.operations.navigateToThread(input.threadRef);
-    const terminalInput = input.operations.terminalInput(thread);
-    const openTerminal = () => input.operations.openTerminal(terminalInput);
-    const activateTerminal = async () => {
+    let pending: Promise<LaunchStepResult<TerminalSessionSnapshot>> | undefined;
+    const openTerminal = (): Promise<LaunchStepResult<TerminalSessionSnapshot>> => {
+      if (pending) return pending;
+      pending = (async (): Promise<LaunchStepResult<TerminalSessionSnapshot>> => {
+        try {
+          const thread = await input.operations.waitForThreadShell(
+            input.threadRef,
+            materialized.value.sequence,
+            input.signal,
+          );
+          if (input.requiresWorktree && !thread.worktreePath) {
+            throw new Error("The worktree is not ready. Retry after synchronizing the workspace.");
+          }
+          const terminalInput = input.operations.terminalInput(thread);
+          return await input.operations.openTerminal(terminalInput);
+        } catch (error) {
+          return { _tag: "Failure", error };
+        }
+      })().finally(() => {
+        pending = undefined;
+      });
+      return pending;
+    };
+    const activateTerminal = async (): Promise<LaunchStepResult<TerminalSessionSnapshot>> => {
       const opened = await openTerminal();
-      if (opened._tag === "Success") input.operations.activateTerminalWorkspace();
-      return opened;
+      try {
+        if (opened._tag === "Success") {
+          await input.operations.navigateToThread(input.threadRef);
+          input.operations.activateTerminalWorkspace();
+        }
+        return opened;
+      } catch (error) {
+        return { _tag: "Failure", error };
+      }
     };
     const opened = await activateTerminal();
     if (opened._tag === "Failure") {

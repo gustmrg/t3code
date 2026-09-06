@@ -7798,12 +7798,20 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             interactionMode: "default",
             branch: null,
             worktreePath: null,
+            terminalWorkspace: { mainTerminalId: "term-1", startup: { _tag: "shell" } },
             createdAt: "2026-01-01T00:00:00.000Z",
           }),
         ),
       );
 
       assert.equal(response.sequence, 1);
+      const created = dispatchedCommands[0];
+      assertTrue(created?.type === "thread.create");
+      if (created?.type === "thread.create")
+        assert.deepEqual(created.terminalWorkspace, {
+          mainTerminalId: "term-1",
+          startup: { _tag: "shell" },
+        });
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
         ["thread.create"],

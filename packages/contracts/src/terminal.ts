@@ -37,6 +37,7 @@ export const TerminalAgentLaunchResult = Schema.Struct({
   providerInstanceId: ProviderInstanceId,
   displayName: TrimmedNonEmptyStringSchema,
   status: TerminalAgentLaunchStatus,
+  retryPolicy: Schema.optional(Schema.Literals(["retry", "restart-required", "none"])),
   message: Schema.optional(TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(512))),
 });
 export type TerminalAgentLaunchResult = typeof TerminalAgentLaunchResult.Type;
@@ -72,6 +73,7 @@ export const TerminalAttachInput = Schema.Struct({
   rows: Schema.optional(TerminalRowsSchema),
   env: Schema.optional(TerminalEnvSchema),
   restartIfNotRunning: Schema.optional(Schema.Boolean),
+  existingOnly: Schema.optional(Schema.Boolean),
 });
 export type TerminalAttachInput = Schema.Codec.Encoded<typeof TerminalAttachInput>;
 

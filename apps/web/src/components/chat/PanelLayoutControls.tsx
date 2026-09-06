@@ -6,6 +6,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 interface PanelLayoutControlsProps {
   showTerminalControl?: boolean;
+  terminalWorkspace?: boolean;
   terminalAvailable: boolean;
   terminalOpen: boolean;
   terminalShortcutLabel: string | null;
@@ -21,6 +22,7 @@ interface PanelLayoutControlsProps {
 
 export const PanelLayoutControls = memo(function PanelLayoutControls({
   showTerminalControl = true,
+  terminalWorkspace = false,
   terminalAvailable,
   terminalOpen,
   terminalShortcutLabel,
@@ -44,7 +46,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               className="shrink-0 [-webkit-app-region:no-drag]"
               pressed={terminalOpen}
               onPressedChange={onToggleTerminal}
-              aria-label="Toggle terminal drawer"
+              aria-label={terminalWorkspace ? "Focus main terminal" : "Toggle terminal drawer"}
               variant="ghost"
               size="sm"
               disabled={!terminalAvailable}
@@ -54,7 +56,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
           </TooltipTrigger>
           <TooltipPopup side="bottom">
             {terminalAvailable
-              ? `Toggle terminal drawer${terminalShortcutLabel ? ` (${terminalShortcutLabel})` : ""}`
+              ? `${terminalWorkspace ? "Focus main terminal" : "Toggle terminal drawer"}${terminalShortcutLabel ? ` (${terminalShortcutLabel})` : ""}`
               : "Terminal drawer is unavailable"}
           </TooltipPopup>
         </Tooltip>

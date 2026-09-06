@@ -638,6 +638,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             interactionMode: event.payload.interactionMode,
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
+            ...(event.payload.terminalWorkspace !== undefined
+              ? { terminalWorkspace: event.payload.terminalWorkspace }
+              : {}),
             linkedPullRequest: null,
             latestTurnId: null,
             createdAt: event.payload.createdAt,
@@ -833,6 +836,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               ? { modelSelection: event.payload.modelSelection }
               : {}),
             ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
+            ...(event.payload.terminalWorkspace !== undefined
+              ? { terminalWorkspace: event.payload.terminalWorkspace }
+              : {}),
             ...(event.payload.worktreePath !== undefined
               ? { worktreePath: event.payload.worktreePath }
               : {}),

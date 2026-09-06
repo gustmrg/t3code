@@ -136,6 +136,13 @@ export class TerminalManager extends Context.Service<
      */
     readonly open: (
       input: TerminalOpenInput,
+      preserveExisting?: boolean,
+    ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
+
+    /** Atomically open/reuse a generation and submit its server-resolved CLI at most once. */
+    readonly openAgent: (
+      input: TerminalOpenInput,
+      target: TerminalAgentTarget,
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
     /** Record a trusted provider launch outcome on an already-open shell. */
@@ -265,6 +272,13 @@ export interface TerminalAgentStartInput {
   readonly args: ReadonlyArray<string>;
 }
 
+export type TerminalAgentTarget =
+  | { readonly result: TerminalAgentLaunchResult }
+  | {
+      readonly launch: TerminalAgentStartInput;
+      readonly available: Effect.Effect<boolean, never, FileSystem.FileSystem | Path.Path>;
+    };
+
 export interface TerminalSessionState {
   threadId: string;
   terminalId: string;
@@ -291,6 +305,9 @@ export interface TerminalSessionState {
   childCommandLabel: string | null;
   shellCommand: string | null;
   agentLaunch: TerminalAgentLaunchResult | null;
+  generation: number;
+  agentWriteAttempted: boolean;
+  userInputReceived: boolean;
   runtimeEnv: Record<string, string> | null;
 }
 
@@ -1923,6 +1940,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       session.childCommandLabel = null;
       session.shellCommand = null;
       session.agentLaunch = null;
+      session.generation += 1;
+      session.agentWriteAttempted = false;
+      session.userInputReceived = false;
       session.pendingProcessEvents = [];
       session.pendingProcessEventIndex = 0;
       session.processEventDrainRunning = false;
@@ -2215,7 +2235,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }).pipe(Effect.ignoreCause({ log: true })),
   );
 
-  const openLocked = Effect.fn("terminal.openLocked")(function* (input: TerminalOpenInput) {
+  const openLocked = Effect.fn("terminal.openLocked")(function* (
+    input: TerminalOpenInput,
+    start = true,
+  ) {
     const terminalId = input.terminalId;
     yield* assertValidCwd(input.cwd);
 
@@ -2251,6 +2274,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         childCommandLabel: null,
         shellCommand: null,
         agentLaunch: null,
+        generation: 0,
+        agentWriteAttempted: false,
+        userInputReceived: false,
         runtimeEnv: normalizedRuntimeEnv(input.env),
       };
 
@@ -2262,6 +2288,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       });
 
       yield* evictInactiveSessionsIfNeeded();
+      if (!start) {
+        session.status = "exited";
+        return snapshot(session);
+      }
       yield* startSession(
         session,
         {
@@ -2340,8 +2370,18 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     return snapshot(liveSession);
   });
 
-  const open: TerminalManager["Service"]["open"] = (input) =>
-    withThreadLock(input.threadId, openLocked(input));
+  const open: TerminalManager["Service"]["open"] = (input, preserveExisting = false) =>
+    withThreadLock(
+      input.threadId,
+      Effect.gen(function* () {
+        if (preserveExisting) {
+          const existing = yield* getSession(input.threadId, input.terminalId);
+          if (Option.isSome(existing) && existing.value.generation > 0)
+            return snapshot(existing.value);
+        }
+        return yield* openLocked(input);
+      }),
+    );
 
   const recordAgentLaunchLocked = Effect.fn("terminal.recordAgentLaunchLocked")(function* (
     input: TerminalAgentLaunchRecordInput,
@@ -2363,43 +2403,110 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const recordAgentLaunch: TerminalManager["Service"]["recordAgentLaunch"] = (input) =>
     withThreadLock(input.threadId, recordAgentLaunchLocked(input));
 
+  const launchAgentLocked = Effect.fn("terminal.launchAgentLocked")(function* (
+    input: TerminalAgentStartInput,
+  ) {
+    const session = yield* requireSession(input.threadId, input.terminalId);
+    if (session.agentWriteAttempted) return snapshot(session);
+    const process = session.process;
+    if (!process || session.status !== "running") {
+      return yield* new TerminalNotRunningError({
+        threadId: input.threadId,
+        terminalId: input.terminalId,
+      });
+    }
+    if (session.userInputReceived || session.hasRunningSubprocess) {
+      return yield* recordAgentLaunchLocked({
+        ...input,
+        result: {
+          providerInstanceId: input.providerInstanceId,
+          displayName: input.displayName,
+          status: "failed",
+          retryPolicy: "restart-required",
+          message:
+            "The shell has received input. Restart the terminal explicitly or launch the CLI manually.",
+        },
+      });
+    }
+    const commandLine = formatAgentCommandLine({
+      command: input.command,
+      args: input.args,
+      shellCommand: session.shellCommand,
+      platform,
+    });
+    session.agentWriteAttempted = true;
+    // Record uncertainty before touching the PTY: even an interrupted caller cannot retransmit.
+    session.agentLaunch = {
+      providerInstanceId: input.providerInstanceId,
+      displayName: input.displayName,
+      status: "failed",
+      retryPolicy: "restart-required",
+      message:
+        "Command submission is uncertain. Restart the terminal explicitly before trying again.",
+    };
+    yield* Effect.try({
+      try: () => process.write(`${commandLine}\r`),
+      catch: (cause) =>
+        new TerminalWriteError({
+          threadId: input.threadId,
+          terminalId: input.terminalId,
+          terminalPid: process.pid,
+          cause,
+        }),
+    });
+    return yield* recordAgentLaunchLocked({
+      ...input,
+      result: {
+        providerInstanceId: input.providerInstanceId,
+        displayName: input.displayName,
+        status: "started",
+        retryPolicy: "none",
+      },
+    });
+  });
+
   const launchAgent: TerminalManager["Service"]["launchAgent"] = (input) =>
+    withThreadLock(input.threadId, launchAgentLocked(input));
+
+  const openAgent: TerminalManager["Service"]["openAgent"] = (input, target) =>
     withThreadLock(
       input.threadId,
       Effect.gen(function* () {
-        const session = yield* requireSession(input.threadId, input.terminalId);
-        const process = session.process;
-        if (!process || session.status !== "running") {
-          return yield* new TerminalNotRunningError({
-            threadId: input.threadId,
-            terminalId: input.terminalId,
-          });
+        const existing = yield* getSession(input.threadId, input.terminalId);
+        if (Option.isSome(existing)) {
+          const session = existing.value;
+          // Check before openLocked can change cwd/env or restart an exited generation.
+          if (session.agentWriteAttempted || (!session.process && session.generation > 0))
+            return snapshot(session);
+          if (session.generation === 0) yield* openLocked(input);
+        } else {
+          yield* openLocked(input);
         }
-        const commandLine = formatAgentCommandLine({
-          command: input.command,
-          args: input.args,
-          shellCommand: session.shellCommand,
-          platform,
-        });
-        yield* Effect.try({
-          try: () => process.write(`${commandLine}\r`),
-          catch: (cause) =>
-            new TerminalWriteError({
-              threadId: input.threadId,
-              terminalId: input.terminalId,
-              terminalPid: process.pid,
-              cause,
-            }),
-        });
-        return yield* recordAgentLaunchLocked({
-          threadId: input.threadId,
-          terminalId: input.terminalId,
-          result: {
-            providerInstanceId: input.providerInstanceId,
-            displayName: input.displayName,
-            status: "started",
-          },
-        });
+        if ("result" in target)
+          return yield* recordAgentLaunchLocked({
+            ...input,
+            result: { ...target.result, retryPolicy: "retry" },
+          });
+        const available = yield* target.available.pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+        );
+        if (!available)
+          return yield* recordAgentLaunchLocked({
+            ...input,
+            result: {
+              providerInstanceId: target.launch.providerInstanceId,
+              displayName: target.launch.displayName,
+              status: "failed",
+              retryPolicy: "retry",
+              message: "The provider command was not found.",
+            },
+          });
+        return yield* launchAgentLocked(target.launch).pipe(
+          Effect.catch(() => {
+            return Effect.map(requireSession(input.threadId, input.terminalId), snapshot);
+          }),
+        );
       }),
     );
 
@@ -2418,18 +2525,26 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             });
           }
 
-          return yield* openLocked({
-            ...input,
-            terminalId,
-            cwd: input.cwd,
-          });
+          return yield* openLocked(
+            {
+              ...input,
+              terminalId,
+              cwd: input.cwd,
+            },
+            input.existingOnly !== true,
+          );
         }
 
         const session = existing.value;
         const targetCols = input.cols ?? session.cols;
         const targetRows = input.rows ?? session.rows;
 
-        if (!session.process && input.cwd && input.restartIfNotRunning === true) {
+        if (
+          !session.process &&
+          input.cwd &&
+          input.restartIfNotRunning === true &&
+          input.existingOnly !== true
+        ) {
           return yield* openLocked({
             ...input,
             terminalId,
@@ -2633,6 +2748,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         terminalId,
       });
     }
+    session.userInputReceived = true;
     yield* Effect.try({
       try: () => process.write(input.data),
       catch: (cause) =>
@@ -2725,6 +2841,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             childCommandLabel: null,
             shellCommand: null,
             agentLaunch: null,
+            generation: 0,
+            agentWriteAttempted: false,
+            userInputReceived: false,
             runtimeEnv: normalizedRuntimeEnv(input.env),
           };
           const createdSession = session;
@@ -2794,6 +2913,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     open,
     recordAgentLaunch,
     launchAgent,
+    openAgent,
     attachStream,
     write,
     resize,

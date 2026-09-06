@@ -1,3 +1,4 @@
+import { useRightPanelStore } from "../rightPanelStore";
 import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
@@ -43,7 +44,12 @@ import {
 } from "~/terminal/ghostty/surface";
 import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
 import { useOpenInPreferredEditor } from "../editorPreferences";
-import { isTerminalLinkActivation, isTerminalUrl, resolvePathLinkTarget } from "../terminal-links";
+import {
+  isTerminalLinkActivation,
+  isTerminalUrl,
+  resolvePathLinkTarget,
+  splitPathAndPosition,
+} from "../terminal-links";
 import {
   isDiffToggleShortcut,
   isTerminalClearShortcut,
@@ -312,6 +318,7 @@ export function shouldHandleTerminalExit(
 }
 
 interface TerminalViewportProps {
+  existingOnly?: boolean;
   advancedTypography: boolean;
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
@@ -336,6 +343,7 @@ interface TerminalLaunchLocation {
 }
 
 export function TerminalViewport({
+  existingOnly = false,
   advancedTypography,
   threadRef,
   threadId,
@@ -388,6 +396,7 @@ export function TerminalViewport({
     onAddTerminalContext(selection);
   });
   const readTerminalLabel = useEffectEvent(() => terminalLabel);
+  const isMainTerminal = useEffectEvent(() => existingOnly);
   const terminalFontFamily = useClientSettings((settings) =>
     resolveTerminalFontPreference({
       advanced: advancedTypography,
@@ -408,6 +417,7 @@ export function TerminalViewport({
     terminal: {
       threadId,
       terminalId,
+      existingOnly,
       cwd,
       ...(worktreePath !== undefined ? { worktreePath } : {}),
       ...(runtimeEnv ? { env: runtimeEnv } : {}),
@@ -774,6 +784,21 @@ export function TerminalViewport({
           return;
         }
         const target = resolvePathLinkTarget(text, cwd);
+        if (isMainTerminal()) {
+          const { path, line } = splitPathAndPosition(target);
+          const root = cwd.replaceAll("\\", "/").replace(/\/$/, "");
+          const normalized = path.replaceAll("\\", "/");
+          if (normalized.startsWith(`${root}/`)) {
+            useRightPanelStore
+              .getState()
+              .openFile(
+                threadRef,
+                normalized.slice(root.length + 1),
+                line ? Number(line) : undefined,
+              );
+            return;
+          }
+        }
         void (async () => {
           const result = await openTerminalPath(target);
           if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
@@ -985,6 +1010,8 @@ export function TerminalViewport({
 }
 
 interface ThreadTerminalDrawerProps {
+  mainTerminalId?: string | undefined;
+  terminalWorkspaceSession?: boolean;
   mode?: "drawer" | "panel";
   threadRef: ScopedThreadRef;
   threadId: ThreadId;
@@ -1073,6 +1100,8 @@ export default function ThreadTerminalDrawer({
   keybindings,
   terminalLabelsById,
   terminalLaunchLocationsById,
+  mainTerminalId,
+  terminalWorkspaceSession = false,
 }: ThreadTerminalDrawerProps) {
   const isPanel = mode === "panel";
   const [advancedTypography] = useLocalStorage(
@@ -1437,7 +1466,7 @@ export default function ThreadTerminalDrawer({
         />
       ) : null}
 
-      {!hasTerminalSidebar && (
+      {!terminalWorkspaceSession && !hasTerminalSidebar && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
           <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
             <TerminalActionButton
@@ -1538,7 +1567,10 @@ export default function ThreadTerminalDrawer({
                           {...(terminalLaunchLocation.runtimeEnv
                             ? { runtimeEnv: terminalLaunchLocation.runtimeEnv }
                             : {})}
-                          onSessionExited={() => onCloseTerminal(terminalId)}
+                          existingOnly={terminalId === mainTerminalId}
+                          onSessionExited={() => {
+                            if (terminalId !== mainTerminalId) onCloseTerminal(terminalId);
+                          }}
                           onAddTerminalContext={onAddTerminalContext}
                           focusRequestId={focusRequestId}
                           autoFocus={terminalId === resolvedActiveTerminalId}
@@ -1567,7 +1599,11 @@ export default function ThreadTerminalDrawer({
                   {...(activeTerminalLaunchLocation.runtimeEnv
                     ? { runtimeEnv: activeTerminalLaunchLocation.runtimeEnv }
                     : {})}
-                  onSessionExited={() => onCloseTerminal(resolvedActiveTerminalId)}
+                  existingOnly={resolvedActiveTerminalId === mainTerminalId}
+                  onSessionExited={() => {
+                    if (resolvedActiveTerminalId !== mainTerminalId)
+                      onCloseTerminal(resolvedActiveTerminalId);
+                  }}
                   onAddTerminalContext={onAddTerminalContext}
                   focusRequestId={focusRequestId}
                   autoFocus
@@ -1581,7 +1617,13 @@ export default function ThreadTerminalDrawer({
 
           {hasTerminalSidebar && (
             <aside className="flex w-36 min-w-36 flex-col border border-border/70 bg-muted/10">
-              <div className="flex h-[22px] items-stretch justify-end border-b border-border/70">
+              <div
+                className={
+                  terminalWorkspaceSession
+                    ? "hidden"
+                    : "flex h-[22px] items-stretch justify-end border-b border-border/70"
+                }
+              >
                 <div className="inline-flex h-full items-stretch">
                   <TerminalActionButton
                     className={`inline-flex h-full items-center px-1 text-foreground/90 transition-colors ${

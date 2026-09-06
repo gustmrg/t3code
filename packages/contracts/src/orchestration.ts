@@ -23,7 +23,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
-import { ProjectThreadLaunchPreference } from "./threadLaunch.ts";
+import { ProjectThreadLaunchPreference, TerminalWorkspaceBinding } from "./threadLaunch.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -409,6 +409,7 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  terminalWorkspace: Schema.optional(Schema.NullOr(TerminalWorkspaceBinding)),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
@@ -486,6 +487,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  terminalWorkspace: Schema.optional(Schema.NullOr(TerminalWorkspaceBinding)),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
@@ -709,6 +711,7 @@ const ThreadCreateFields = {
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  terminalWorkspace: Schema.optional(Schema.NullOr(TerminalWorkspaceBinding)),
   createdAt: IsoDateTime,
 } as const;
 
@@ -811,6 +814,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   expectedBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  terminalWorkspace: Schema.optional(Schema.NullOr(TerminalWorkspaceBinding)),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
 }).check(
   Schema.makeFilter(
@@ -844,6 +848,7 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  terminalWorkspace: Schema.optional(Schema.NullOr(TerminalWorkspaceBinding)),
   createdAt: IsoDateTime,
 });
 
@@ -1186,6 +1191,7 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  terminalWorkspace: Schema.optional(Schema.NullOr(TerminalWorkspaceBinding)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -1268,6 +1274,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  terminalWorkspace: Schema.optional(Schema.NullOr(TerminalWorkspaceBinding)),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   updatedAt: IsoDateTime,
 });

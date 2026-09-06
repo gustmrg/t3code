@@ -11,6 +11,7 @@ import {
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Data from "effect/Data";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
@@ -607,6 +608,137 @@ it.layer(
     }),
   );
 
+  it.effect("atomically coalesces concurrent agent opens despite changed cwd/env", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      const target = {
+        launch: {
+          threadId: "thread-1",
+          terminalId: DEFAULT_TERMINAL_ID,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          displayName: "Codex",
+          command: "codex",
+          args: [],
+        },
+        available: Effect.succeed(true),
+      };
+      yield* Effect.all(
+        [manager.openAgent(openInput(), target), manager.openAgent(openInput(), target)],
+        { concurrency: "unbounded" },
+      );
+      yield* manager.openAgent(
+        { ...openInput(), cwd: "/does-not-exist", env: { CHANGED: "true" } },
+        target,
+      );
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+      expect(ptyAdapter.processes[0]?.writes).toHaveLength(1);
+      expect(ptyAdapter.processes[0]?.killed).toBe(false);
+      yield* manager.restart({ ...openInput(), cols: 80, rows: 24 });
+      yield* manager.openAgent(openInput(), target);
+      expect(ptyAdapter.spawnInputs).toHaveLength(2);
+      expect(ptyAdapter.processes[1]?.writes).toHaveLength(1);
+    }),
+  );
+
+  it.effect(
+    "allows preflight recovery but requires restart after user input or uncertain write",
+    () =>
+      Effect.gen(function* () {
+        const { manager, ptyAdapter } = yield* createManager();
+        const launch = {
+          threadId: "thread-1",
+          terminalId: DEFAULT_TERMINAL_ID,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          displayName: "Codex",
+          command: "codex",
+          args: [],
+        };
+        const failed = yield* manager.openAgent(openInput(), {
+          launch,
+          available: Effect.succeed(false),
+        });
+        expect(failed.agentLaunch?.retryPolicy).toBe("retry");
+        const process = ptyAdapter.processes[0]!;
+        process.writeFailure = new Error("may have written bytes");
+        const uncertain = yield* manager.openAgent(openInput(), {
+          launch,
+          available: Effect.succeed(true),
+        });
+        expect(uncertain.agentLaunch?.retryPolicy).toBe("restart-required");
+        process.writeFailure = undefined;
+        yield* manager.openAgent(openInput(), { launch, available: Effect.succeed(true) });
+        expect(process.writes).toHaveLength(0);
+        yield* manager.restart({ ...openInput(), cols: 80, rows: 24 });
+        yield* manager.openAgent(openInput(), { launch, available: Effect.succeed(false) });
+        yield* manager.write({
+          threadId: launch.threadId,
+          terminalId: launch.terminalId,
+          data: "echo hello\r",
+        });
+        const busy = yield* manager.openAgent(openInput(), {
+          launch,
+          available: Effect.succeed(true),
+        });
+        expect(busy.agentLaunch?.retryPolicy).toBe("restart-required");
+        expect(ptyAdapter.processes[1]?.writes).toEqual(["echo hello\r"]);
+        yield* manager.restart({ ...openInput(), cols: 80, rows: 24 });
+        yield* manager.openAgent(openInput(), { launch, available: Effect.succeed(false) });
+        const recovered = yield* manager.openAgent(openInput(), {
+          launch,
+          available: Effect.succeed(true),
+        });
+        expect(recovered.agentLaunch?.status).toBe("started");
+      }),
+  );
+
+  it.effect(
+    "serializes explicit restart behind preflight without submitting to a later generation",
+    () =>
+      Effect.gen(function* () {
+        const { manager, ptyAdapter } = yield* createManager();
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const available = Effect.gen(function* () {
+          yield* Deferred.succeed(entered, undefined);
+          yield* Deferred.await(release);
+          return true;
+        });
+        const launching = yield* Effect.forkChild(
+          manager.openAgent(openInput(), {
+            available,
+            launch: {
+              threadId: "thread-1",
+              terminalId: DEFAULT_TERMINAL_ID,
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              displayName: "Codex",
+              command: "codex",
+              args: [],
+            },
+          }),
+        );
+        yield* Deferred.await(entered);
+        const restarting = yield* Effect.forkChild(
+          manager.restart({ ...openInput(), cols: 80, rows: 24 }),
+        );
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(launching);
+        yield* Fiber.join(restarting);
+        expect(ptyAdapter.spawnInputs).toHaveLength(2);
+        expect(ptyAdapter.processes[0]?.writes).toHaveLength(1);
+        expect(ptyAdapter.processes[1]?.writes).toHaveLength(0);
+      }),
+  );
+
+  it.effect("existing-only attach never spawns a missing terminal", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      const result = yield* Effect.result(
+        manager.attachStream({ ...openInput(), existingOnly: true }, () => Effect.void),
+      );
+      expect(result._tag).toBe("Success");
+      expect(ptyAdapter.spawnInputs).toHaveLength(0);
+    }),
+  );
   it.effect("preserves structured context and causes for PTY I/O failures", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();

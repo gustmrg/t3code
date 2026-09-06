@@ -19,11 +19,18 @@ import type {
 } from "@t3tools/contracts";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
+import * as Option from "effect/Option";
+import { environmentCatalog } from "../connection/catalog";
+import { waitForThreadShellReceipt } from "./threadShellReceipt";
 import { useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom } from "./server";
-import { allEnvironmentShellsBootstrappedAtom } from "./shell";
+import {
+  allEnvironmentShellsBootstrappedAtom,
+  environmentShell,
+  environmentSnapshotAtom,
+} from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 
 const EMPTY_PROJECT_REFS: ReadonlyArray<ScopedProjectRef> = Object.freeze([]);
@@ -244,24 +251,31 @@ export function readThreadShell(ref: ScopedThreadRef): EnvironmentThreadShell | 
 }
 
 /** Wait for the shell projection receipt for a newly materialized thread. */
-export function waitForThreadShell(ref: ScopedThreadRef): Promise<EnvironmentThreadShell> {
-  const atom = environmentThreadShells.threadShellAtom(ref);
-  const current = appAtomRegistry.get(atom);
-  if (current) return Promise.resolve(current);
-
-  return new Promise((resolve) => {
-    let unsubscribe = () => {};
-    unsubscribe = appAtomRegistry.subscribe(atom, (thread) => {
-      if (!thread) return;
-      unsubscribe();
-      resolve(thread);
-    });
-    const afterSubscribe = appAtomRegistry.get(atom);
-    if (afterSubscribe) {
-      unsubscribe();
-      resolve(afterSubscribe);
-    }
+export async function waitForThreadShell(
+  ref: ScopedThreadRef,
+  sequence = 0,
+  signal?: AbortSignal,
+): Promise<EnvironmentThreadShell> {
+  const snapshotAtom = environmentSnapshotAtom(ref.environmentId);
+  const stateAtom = environmentShell.stateValueAtom(ref.environmentId);
+  const catalogAtom = environmentCatalog.catalogValueAtom;
+  const thread = await waitForThreadShellReceipt({
+    ref,
+    sequence,
+    ...(signal ? { signal } : {}),
+    read: () => ({
+      snapshot: appAtomRegistry.get(snapshotAtom),
+      error: Option.getOrNull(appAtomRegistry.get(stateAtom).error),
+      removed: !appAtomRegistry.get(catalogAtom).entries.has(ref.environmentId),
+    }),
+    subscribe: (listener) => {
+      const cleanups = [snapshotAtom, stateAtom, catalogAtom].map((atom) =>
+        appAtomRegistry.subscribe(atom as Atom.Atom<unknown>, listener),
+      );
+      return () => cleanups.forEach((cleanup) => cleanup());
+    },
   });
+  return { ...thread, environmentId: ref.environmentId };
 }
 
 /** Whether the environment's server understands thread.settle/unsettle.

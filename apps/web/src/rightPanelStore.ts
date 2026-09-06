@@ -97,6 +97,7 @@ interface RightPanelStoreState {
     ref: ScopedThreadRef,
     target: { environmentId?: string; projectId: string; repository: string; number: number },
   ) => void;
+  ensureMainTerminal: (ref: ScopedThreadRef, terminalId: string, activate?: boolean) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
@@ -445,6 +446,38 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                     entry.id === surface.id ? surface : entry,
                   )
                 : [...withoutStandaloneExplorer, surface],
+            };
+          }),
+        })),
+      ensureMainTerminal: (ref, terminalId, activate = false) =>
+        set((state) => ({
+          panelFirstByThreadKey: { ...state.panelFirstByThreadKey, [scopedThreadKey(ref)]: true },
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+            const main = terminalSurface(terminalId);
+            const remaining = current.surfaces.flatMap<RightPanelSurface>((surface) => {
+              if (surface.kind !== "terminal" || !surface.terminalIds.includes(terminalId))
+                return [surface];
+              const terminalIds = surface.terminalIds.filter((id) => id !== terminalId);
+              if (terminalIds.length === 0) return [];
+              return [
+                {
+                  ...surface,
+                  id: `terminal:${terminalIds[0]}`,
+                  resourceId: terminalIds[0]!,
+                  terminalIds,
+                  activeTerminalId: terminalIds[0]!,
+                },
+              ];
+            });
+            return {
+              isOpen: true,
+              surfaces: [main, ...remaining],
+              activeSurfaceId:
+                activate ||
+                !current.activeSurfaceId ||
+                !remaining.some((entry) => entry.id === current.activeSurfaceId)
+                  ? main.id
+                  : current.activeSurfaceId,
             };
           }),
         })),

@@ -10,11 +10,20 @@ export type ThreadContentPresentation =
     };
 
 export function projectThreadContentPresentation(input: {
+  readonly terminalWorkspace?: unknown;
   readonly hasDetail: boolean;
   readonly detailError: string | null;
   readonly detailDeleted: boolean;
   readonly connectionState: EnvironmentConnectionPhase;
 }): ThreadContentPresentation {
+  if (input.terminalWorkspace) {
+    return {
+      kind: "unavailable",
+      title: "Terminal workspace",
+      detail:
+        "Open this session on web or desktop to use its terminal. Chat is coming in a future update.",
+    };
+  }
   if (input.hasDetail) {
     return { kind: "ready" };
   }

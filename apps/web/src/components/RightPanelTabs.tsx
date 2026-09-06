@@ -43,6 +43,8 @@ import { previewBridge } from "./preview/previewBridge";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 
 interface RightPanelTabsProps {
+  mainTerminalId?: string | undefined;
+  onUseAsMainTerminal?: ((terminalId: string) => void) | undefined;
   mode: PreviewPanelMode;
   maximized?: boolean;
   /** Forwarded to PreviewPanelShell so this surface persists its own width. */
@@ -126,6 +128,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
 } as const;
 
 type TabContextMenuAction =
+  | "use-as-main"
   | "copy-path"
   | "toggle-mute"
   | "close"
@@ -612,7 +615,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddBrowser,
     },
     {
-      label: "Terminal",
+      label: props.mainTerminalId ? "Open terminal" : "Terminal",
       icon: TerminalSquare,
       shortcut: "T",
       available: props.terminalAvailable,
@@ -673,7 +676,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       const surfaceIndex = props.surfaces.findIndex((entry) => entry.id === surface.id);
       if (surfaceIndex < 0) return;
 
+      const protectedMain =
+        surface.kind === "terminal" && surface.terminalIds.includes(props.mainTerminalId ?? "");
       const items: ContextMenuItem<TabContextMenuAction>[] = [];
+      if (surface.kind === "terminal" && !props.mainTerminalId && props.onUseAsMainTerminal) {
+        items.push({ id: "use-as-main", label: "Use as main terminal" });
+      }
       if (surface.kind === "file") {
         items.push({ id: "copy-path", label: "Copy path" });
       }
@@ -697,7 +705,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         });
       }
       items.push(
-        { id: "close", label: "Close" },
+        { id: "close", label: "Close", disabled: protectedMain },
         {
           id: "close-others",
           label: "Close others",
@@ -717,6 +725,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
       const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
       switch (action) {
+        case "use-as-main":
+          if (surface.kind === "terminal") props.onUseAsMainTerminal?.(surface.activeTerminalId);
+          break;
         case "copy-path":
           if (surface.kind === "file") props.onCopyFilePath(surface.relativePath);
           break;
@@ -733,7 +744,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           break;
         }
         case "close":
-          props.onCloseSurface(surface);
+          if (!protectedMain) props.onCloseSurface(surface);
           break;
         case "close-others":
           props.onCloseOtherSurfaces(surface);
@@ -759,7 +770,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       if (event.button !== 1) return;
       event.preventDefault();
       event.stopPropagation();
-      props.onCloseSurface(surface);
+      if (surface.kind !== "terminal" || !surface.terminalIds.includes(props.mainTerminalId ?? ""))
+        props.onCloseSurface(surface);
     },
     [props],
   );
@@ -823,24 +835,29 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                       : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                   )}
                 >
-                  <PanelTabCloseButton
-                    label={`Close ${title}`}
-                    onClick={() => props.onCloseSurface(surface)}
-                  >
-                    <SurfaceIcon
-                      surface={surface}
-                      sessions={props.previewSessions}
-                      desktopByTabId={props.desktopByTabId}
-                      theme={resolvedTheme}
-                      pullRequestStatuses={props.pullRequestStatuses}
-                    />
-                    {pending ? (
-                      <span
-                        className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
-                        aria-hidden
+                  {surface.kind === "terminal" &&
+                  surface.terminalIds.includes(props.mainTerminalId ?? "") ? (
+                    <TerminalSquare className="size-3 shrink-0" />
+                  ) : (
+                    <PanelTabCloseButton
+                      label={`Close ${title}`}
+                      onClick={() => props.onCloseSurface(surface)}
+                    >
+                      <SurfaceIcon
+                        surface={surface}
+                        sessions={props.previewSessions}
+                        desktopByTabId={props.desktopByTabId}
+                        theme={resolvedTheme}
+                        pullRequestStatuses={props.pullRequestStatuses}
                       />
-                    ) : null}
-                  </PanelTabCloseButton>
+                      {pending ? (
+                        <span
+                          className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
+                          aria-hidden
+                        />
+                      ) : null}
+                    </PanelTabCloseButton>
+                  )}
                   {audio === "none" || !audioRuntimeTabId ? null : (
                     <Tooltip>
                       <TooltipTrigger

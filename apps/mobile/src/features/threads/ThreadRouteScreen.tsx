@@ -753,6 +753,7 @@ function ThreadRouteContent(
   }
 
   const contentPresentation = projectThreadContentPresentation({
+    terminalWorkspace: selectedThread.terminalWorkspace,
     hasDetail: selectedThreadDetail !== null,
     detailError: Option.getOrNull(selectedThreadDetailState.error),
     detailDeleted: selectedThreadDetailState.status === "deleted",

@@ -53,6 +53,9 @@ export function mergeEnvironmentThread(
     interactionMode: shell.interactionMode,
     branch: shell.branch,
     worktreePath: shell.worktreePath,
+    ...(shell.terminalWorkspace !== undefined
+      ? { terminalWorkspace: shell.terminalWorkspace }
+      : {}),
     latestTurn: shell.latestTurn,
     createdAt: shell.createdAt,
     updatedAt: shell.updatedAt,

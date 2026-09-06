@@ -637,7 +637,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
       )}
 
       {/* Floating composer — sticks to keyboard via KeyboardStickyView */}
-      {showContent ? (
+      {showContent && !props.selectedThread.terminalWorkspace ? (
         <KeyboardStickyView
           // The animated keyboard height can remain stale after a dismissed
           // IME on both platforms. Visibility is the authoritative closed

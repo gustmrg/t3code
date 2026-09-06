@@ -1,60 +1,50 @@
-# Terminal-first workspaces
+# Terminal workspaces
 
-New threads can start in structured **Chat** or in a full-width **Terminal** workspace.
+Choose **Settings → General → Default new thread view → Terminal** to create sessions with a fixed
+main terminal. **Open terminal with** chooses the normal shell or a configured provider CLI. Project
+settings can override these defaults. Changing a preference affects new sessions, not existing ones.
 
-Choose the application default in **Settings** → **General** → **Default new thread view**:
+Each new terminal session opens in its selected project checkout or newly prepared worktree. Provider
+executables and profiles are resolved by the environment that owns the project, including remote
+connections. An older environment may need a server update before it can create these sessions.
 
-- **Chat** creates a draft first. The thread is added to the server when you send its first message.
-- **Terminal** creates the thread immediately, opens its project or worktree directory, and focuses a
-  shell in the main workspace.
+## Work with tabs
 
-Terminal-first threads still have structured chat. Select **Restore Chat and panel split** from the
-Command Palette, or use the restore button above the panel, to show it beside the workspace.
+The main terminal is the first tab and stays present. Open files, changes and previews in other central
+tabs while the terminal continues running. Use **Cmd+J** on macOS, **Ctrl+J** elsewhere, the Terminal
+button or the Command Palette's terminal action to focus the same main terminal again.
 
-## Choose what the terminal starts
+Closing other tabs, closing all closable tabs or switching sessions does not stop the main terminal.
+New terminal sessions have one main terminal; use another session for another agent. Traditional chat
+threads retain their existing terminal drawer and split terminals.
 
-Under **Open terminal with**, choose:
+In a narrow window, the workspace opens as a sheet. Dismissing it keeps the terminal running; select
+**Open terminal workspace** to return.
 
-- **Shell** to open the environment's normal interactive shell.
-- A configured provider to start that provider's CLI inside the shell.
+## Recover a stopped terminal
 
-Provider selection uses the configured instance, so separate accounts or profiles remain separate.
-The provider executable and credentials are resolved by the environment that owns the project. This
-also applies when the client is connected remotely.
+If a CLI exits back to its shell, the shell remains usable. If the shell exits, the tab and available
+history remain. Use **Start terminal** or **Restart terminal** explicitly to run it again. Restarting
+a live terminal asks for confirmation and ends its current process.
 
-The shell always opens first. If the provider is unavailable, disabled, missing, or cannot be
-started, the terminal remains usable. The warning offers **Try again**, **Choose agent**, and
-**Continue in shell**.
+If a provider cannot be started, the shell remains available. A safe launch failure offers **Try
+again**. If a command may already have been written, or the shell has received input, restart explicitly
+or use the shell manually. Repeating a launch request never writes the same provider command twice
+into the same shell execution.
 
-The terminal CLI conversation is independent from structured chat. T3 Code does not import terminal
-output into the chat timeline, attach that CLI process as the thread's structured provider session,
-or synchronize messages between the two.
+Reloading the client reconnects to a live terminal. Restarting the backend ends its processes; the
+session's identity and available history remain, but the CLI conversation is not automatically resumed.
+Deleting the session performs the normal terminal cleanup.
 
-## Override one project
+## Chat is coming later
 
-Open **Settings** → **Projects**, select a project, and use **Default view** to choose:
+The main terminal toolbar shows **Terminal** selected and **Chat — Coming soon** disabled. This
+session does not yet have a conversation view, and terminal output is not imported into chat.
+Create a separate traditional Chat thread to use structured chat today.
 
-- **Use application default**
-- **Chat**
-- **Terminal**
+Existing threads are not converted automatically. For an empty thread without structured chat history
+or a provider session, a terminal tab's menu offers **Use as main terminal**. This keeps that terminal
+running and preserves other existing terminals. Mixed chat/terminal threads remain traditional.
 
-When Terminal is selected, **Open terminal with** can inherit the application setting or choose a
-different shell or provider for that project. The override applies to every checkout in the logical
-project group.
-
-## Use other surfaces as the workspace
-
-The right-panel tabs are one shared workspace. Terminal, Changes, Preview, Files, Pull Requests, and
-Agents keep their state while the panel switches between split and full-width presentation.
-
-The Command Palette includes actions to:
-
-- open Terminal, Changes, Files, or Preview as the full-width workspace;
-- keep the current panel as the workspace while switching tabs;
-- restore the Chat and panel split.
-
-Opening Changes from a terminal-first thread keeps the panel full-width. Restoring Chat does not stop
-the terminal or recreate its process.
-
-Mobile currently opens new threads in Chat even when Terminal is stored as the application or
-project default. The preference is preserved, so web and desktop clients still honor it.
+Mobile creates traditional Chat threads even when your stored default is Terminal. Opening a terminal
+session on mobile explains that web or desktop is required and does not show a sendable composer.

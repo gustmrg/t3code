@@ -14,11 +14,16 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection, ThreadLinkedPullRequest } from "@t3tools/contracts";
+import {
+  ModelSelection,
+  ThreadLinkedPullRequest,
+  TerminalWorkspaceBinding,
+} from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    terminalWorkspace: Schema.NullOr(Schema.fromJsonString(TerminalWorkspaceBinding)),
     linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
   }),
 );
@@ -40,6 +45,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode,
           branch,
           worktree_path,
+          terminal_workspace_json,
           linked_pull_request_json,
           latest_turn_id,
           created_at,
@@ -69,6 +75,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.interactionMode},
           ${row.branch},
           ${row.worktreePath},
+          ${row.terminalWorkspace == null ? null : JSON.stringify(row.terminalWorkspace)},
           ${row.linkedPullRequest === undefined || row.linkedPullRequest === null ? null : JSON.stringify(row.linkedPullRequest)},
           ${row.latestTurnId},
           ${row.createdAt},
@@ -98,6 +105,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode = excluded.interaction_mode,
           branch = excluded.branch,
           worktree_path = excluded.worktree_path,
+          terminal_workspace_json = excluded.terminal_workspace_json,
           linked_pull_request_json = excluded.linked_pull_request_json,
           latest_turn_id = excluded.latest_turn_id,
           created_at = excluded.created_at,
@@ -134,6 +142,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          terminal_workspace_json AS "terminalWorkspace",
           linked_pull_request_json AS "linkedPullRequest",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
@@ -172,6 +181,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          terminal_workspace_json AS "terminalWorkspace",
           linked_pull_request_json AS "linkedPullRequest",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",

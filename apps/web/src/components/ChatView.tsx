@@ -1,3 +1,9 @@
+import { WorkspaceModeControl } from "./chat/WorkspaceModeControl";
+import {
+  focusMainTerminal,
+  isMainTerminalSurface,
+  closeWorkspaceSurfaces,
+} from "../lib/terminalWorkspaceActions";
 import {
   type ApprovalRequestId,
   DEFAULT_MODEL,
@@ -733,7 +739,10 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
-  const serverThread = useThread(threadRef, { waitForShell: draftThread !== null });
+  const serverThreadDetail = useThread(threadRef, { waitForShell: draftThread !== null });
+  const serverThreadShell = useThreadShell(threadRef);
+  const serverThread = serverThreadDetail ?? serverThreadShell;
+  const terminalWorkspace = serverThread?.terminalWorkspace;
   const projectRef = serverThread
     ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
     : draftThread
@@ -889,6 +898,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
   );
 
   const splitTerminal = useCallback(() => {
+    if (terminalWorkspace) return;
     if (!cwd) {
       return;
     }
@@ -906,6 +916,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
       },
     });
   }, [
+    terminalWorkspace,
     allocatableTerminalIds,
     bumpFocusRequestId,
     cwd,
@@ -984,6 +995,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
 
   const closeTerminal = useCallback(
     (terminalId: string) => {
+      if (terminalId === terminalWorkspace?.mainTerminalId) return;
       const fallbackExitWrite = () =>
         writeTerminal({
           environmentId: threadRef.environmentId,
@@ -1008,6 +1020,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
       bumpFocusRequestId();
     },
     [
+      terminalWorkspace,
       bumpFocusRequestId,
       storeCloseTerminal,
       threadId,
@@ -1027,7 +1040,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     [onAddTerminalContext, visible],
   );
 
-  if (!project || !terminalUiState.terminalOpen || !cwd) {
+  if (terminalWorkspace || !project || !terminalUiState.terminalOpen || !cwd) {
     return null;
   }
 
@@ -1102,7 +1115,9 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
   closeShortcutLabel,
 }: PersistentThreadTerminalPanelProps) {
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
-  const serverThread = useThread(threadRef, { waitForShell: draftThread !== null });
+  const serverThreadDetail = useThread(threadRef, { waitForShell: draftThread !== null });
+  const serverThreadShell = useThreadShell(threadRef);
+  const serverThread = serverThreadDetail ?? serverThreadShell;
   const projectRef = serverThread
     ? scopeProjectRef(serverThread.environmentId, serverThread.projectId)
     : draftThread
@@ -1195,43 +1210,112 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
     threadWorktreePath,
   ]);
 
+  const binding = serverThread?.terminalWorkspace;
+  const isMain = !!binding && surface.terminalIds.includes(binding.mainTerminalId);
+  const runOpen = useAtomCommand(terminalEnvironment.open, { reportFailure: false });
+  const runRestart = useAtomCommand(terminalEnvironment.restart, { reportFailure: false });
+  const [starting, setStarting] = useState(false);
+  const pendingStart = useRef(false);
+  const recover = async () => {
+    if (!binding || !project || !cwd || pendingStart.current) return;
+    pendingStart.current = true;
+    setStarting(true);
+    try {
+      if (
+        activeSummary?.status === "running" &&
+        !(await confirmTerminalClose(["Main terminal"], "restart"))
+      )
+        return;
+      const input = {
+        threadId: threadRef.threadId,
+        terminalId: binding.mainTerminalId,
+        cwd: threadWorktreePath ?? project.workspaceRoot,
+        worktreePath: threadWorktreePath,
+        env: runtimeEnv,
+        cols: 120,
+        rows: 30,
+      };
+      const restarted = await runRestart({ environmentId: threadRef.environmentId, input });
+      if (restarted._tag === "Failure") throw new Error("Could not restart the main terminal.");
+      if (binding.startup._tag === "agent") {
+        const opened = await runOpen({
+          environmentId: threadRef.environmentId,
+          input: {
+            ...input,
+            agentLaunch: { providerInstanceId: binding.startup.providerInstanceId },
+          },
+        });
+        if (opened._tag === "Failure") throw new Error("Could not launch the provider CLI.");
+        if (opened.value.agentLaunch?.status !== "started")
+          throw new Error(opened.value.agentLaunch?.message ?? "Provider CLI did not start.");
+      }
+    } catch (error) {
+      toastManager.add({
+        type: "error",
+        title: "Terminal recovery failed",
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      pendingStart.current = false;
+      setStarting(false);
+    }
+  };
   if (!project || !cwd) return null;
 
   return (
-    <ThreadTerminalDrawer
-      mode="panel"
-      threadRef={threadRef}
-      threadId={threadRef.threadId}
-      cwd={cwd}
-      worktreePath={worktreePath}
-      runtimeEnv={runtimeEnv}
-      height={0}
-      terminalIds={surface.terminalIds}
-      activeTerminalId={surface.activeTerminalId}
-      terminalGroups={[
-        {
-          id: surface.id,
-          terminalIds: surface.terminalIds,
-          ...(surface.splitDirection === "vertical" ? { splitDirection: "vertical" as const } : {}),
-        },
-      ]}
-      activeTerminalGroupId={surface.id}
-      focusRequestId={focusRequestId}
-      onSplitTerminal={onSplitTerminal}
-      onSplitTerminalVertical={onSplitTerminalVertical}
-      onNewTerminal={onNewTerminal}
-      splitShortcutLabel={splitShortcutLabel}
-      splitVerticalShortcutLabel={splitVerticalShortcutLabel}
-      newShortcutLabel={newShortcutLabel}
-      closeShortcutLabel={closeShortcutLabel}
-      onActiveTerminalChange={onActiveTerminalChange}
-      onCloseTerminal={onCloseTerminal}
-      onHeightChange={() => undefined}
-      onAddTerminalContext={onAddTerminalContext}
-      terminalLabelsById={terminalLabelsById}
-      terminalLaunchLocationsById={terminalLaunchLocationsById}
-      keybindings={keybindings}
-    />
+    <div className="flex min-h-0 flex-1 flex-col h-full">
+      {isMain ? (
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b p-2">
+          <WorkspaceModeControl />
+          <Button size="xs" variant="outline" disabled={starting} onClick={() => void recover()}>
+            {starting ? "Starting…" : activeSummary ? "Restart terminal" : "Start terminal"}
+          </Button>
+          {activeSummary?.status !== "running" ? (
+            <span className="text-xs text-muted-foreground">
+              Terminal is not running. Start it explicitly to continue.
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      <ThreadTerminalDrawer
+        mainTerminalId={binding?.mainTerminalId}
+        terminalWorkspaceSession={!!binding}
+        mode="panel"
+        threadRef={threadRef}
+        threadId={threadRef.threadId}
+        cwd={cwd}
+        worktreePath={worktreePath}
+        runtimeEnv={runtimeEnv}
+        height={0}
+        terminalIds={surface.terminalIds}
+        activeTerminalId={surface.activeTerminalId}
+        terminalGroups={[
+          {
+            id: surface.id,
+            terminalIds: surface.terminalIds,
+            ...(surface.splitDirection === "vertical"
+              ? { splitDirection: "vertical" as const }
+              : {}),
+          },
+        ]}
+        activeTerminalGroupId={surface.id}
+        focusRequestId={focusRequestId}
+        onSplitTerminal={onSplitTerminal}
+        onSplitTerminalVertical={onSplitTerminalVertical}
+        onNewTerminal={onNewTerminal}
+        splitShortcutLabel={splitShortcutLabel}
+        splitVerticalShortcutLabel={splitVerticalShortcutLabel}
+        newShortcutLabel={newShortcutLabel}
+        closeShortcutLabel={closeShortcutLabel}
+        onActiveTerminalChange={onActiveTerminalChange}
+        onCloseTerminal={onCloseTerminal}
+        onHeightChange={() => undefined}
+        onAddTerminalContext={onAddTerminalContext}
+        terminalLabelsById={terminalLabelsById}
+        terminalLaunchLocationsById={terminalLaunchLocationsById}
+        keybindings={keybindings}
+      />
+    </div>
   );
 });
 
@@ -1333,7 +1417,7 @@ function ChatViewContent(props: ChatViewProps) {
         ? store.getDraftSession(draftId)
         : null,
   );
-  const routeServerThreadShell = useThreadShell(routeKind === "server" ? routeThreadRef : null);
+  const routeServerThreadShell = useThreadShell(routeThreadRef);
   const serverThread = useThread(routeThreadRef, { waitForShell: draftThread !== null });
   const loadingServerThread = useMemo(
     () =>
@@ -1682,6 +1766,24 @@ function ChatViewContent(props: ChatViewProps) {
         : null,
     [activeThreadEnvironmentId, activeThreadId],
   );
+  const terminalWorkspace =
+    activeServerThread?.terminalWorkspace ?? routeServerThreadShell?.terminalWorkspace ?? null;
+  const focusWorkspaceTerminal = useCallback(() => {
+    if (!activeThreadRef || !terminalWorkspace) return;
+    focusMainTerminal({
+      ref: activeThreadRef,
+      binding: terminalWorkspace,
+      ensure: useRightPanelStore.getState().ensureMainTerminal,
+      focus: () => setTerminalFocusRequestId((value) => value + 1),
+    });
+  }, [activeThreadRef, terminalWorkspace]);
+  useEffect(() => {
+    if (activeThreadRef && terminalWorkspace) {
+      useRightPanelStore
+        .getState()
+        .ensureMainTerminal(activeThreadRef, terminalWorkspace.mainTerminalId);
+    }
+  }, [activeThreadRef, terminalWorkspace?.mainTerminalId]);
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
   const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
   const [timelineAnchor, setTimelineAnchor] = useState<{
@@ -1752,9 +1854,11 @@ function ChatViewContent(props: ChatViewProps) {
     [activeKnownTerminalIds, panelTerminalIds],
   );
   const previewPanelOpen = activeRightPanelKind === "preview" && isPreviewSupportedInRuntime();
-  const rightPanelOpen = rightPanelState.isOpen;
+  const rightPanelOpen =
+    (terminalWorkspace !== null && !shouldUseRightPanelSheet) || rightPanelState.isOpen;
   const canMaximizeRightPanel = rightPanelOpen && !shouldUseRightPanelSheet;
-  const rightPanelMaximized = canMaximizeRightPanel && storedRightPanelMaximized;
+  const rightPanelMaximized =
+    canMaximizeRightPanel && (terminalWorkspace !== null || storedRightPanelMaximized);
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUseRightPanelSheet;
 
   useEffect(() => {
@@ -2999,6 +3103,10 @@ function ChatViewContent(props: ChatViewProps) {
     [activeThreadRef, storeSetTerminalOpen],
   );
   const toggleTerminalVisibility = useCallback(() => {
+    if (terminalWorkspace) {
+      focusWorkspaceTerminal();
+      return;
+    }
     if (!activeThreadRef) return;
     const nextOpen = !terminalUiState.terminalOpen;
     if (nextOpen && terminalUiState.terminalIds.length === 0) {
@@ -3028,6 +3136,8 @@ function ChatViewContent(props: ChatViewProps) {
     }
     setTerminalOpen(nextOpen);
   }, [
+    terminalWorkspace,
+    focusWorkspaceTerminal,
     activeProject,
     activeThreadId,
     activeThreadRef,
@@ -3043,6 +3153,7 @@ function ChatViewContent(props: ChatViewProps) {
   ]);
   const splitTerminal = useCallback(
     (direction: "horizontal" | "vertical" = "horizontal") => {
+      if (terminalWorkspace) return;
       if (!activeThreadRef || hasReachedSplitLimit || !activeThreadId || !activeProject) {
         return;
       }
@@ -3072,6 +3183,7 @@ function ChatViewContent(props: ChatViewProps) {
       });
     },
     [
+      terminalWorkspace,
       activeProject,
       activeThreadId,
       allocatableActiveTerminalIds,
@@ -3086,6 +3198,7 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
   const createNewTerminal = useCallback(() => {
+    if (terminalWorkspace) return;
     if (!activeThreadRef || !activeThreadId || !activeProject) {
       return;
     }
@@ -3110,6 +3223,7 @@ function ChatViewContent(props: ChatViewProps) {
       },
     });
   }, [
+    terminalWorkspace,
     activeProject,
     activeThreadId,
     allocatableActiveTerminalIds,
@@ -3122,6 +3236,7 @@ function ChatViewContent(props: ChatViewProps) {
   ]);
   const closeTerminal = useCallback(
     (terminalId: string) => {
+      if (terminalId === terminalWorkspace?.mainTerminalId) return;
       if (!activeThreadId || !activeThreadRef) return;
       const fallbackExitWrite = () =>
         writeTerminal({
@@ -3145,6 +3260,7 @@ function ChatViewContent(props: ChatViewProps) {
       setTerminalFocusRequestId((value) => value + 1);
     },
     [
+      terminalWorkspace,
       activeThreadId,
       activeThreadRef,
       closeTerminalMutation,
@@ -3534,19 +3650,37 @@ function ChatViewContent(props: ChatViewProps) {
     }
   }, [activePreviewState.activeTabId, activeThreadRef, createBrowserSurface, previewPanelOpen]);
   const togglePreviewPanel = useCallback(() => {
+    if (terminalWorkspace) {
+      focusWorkspaceTerminal();
+      return;
+    }
     if (!activeThreadRef || !isPreviewSupportedInRuntime()) return;
     if (previewPanelOpen) {
       useRightPanelStore.getState().close(activeThreadRef);
       return;
     }
     openPreviewPanel();
-  }, [activeThreadRef, openPreviewPanel, previewPanelOpen]);
+  }, [
+    terminalWorkspace,
+    focusWorkspaceTerminal,
+    activeThreadRef,
+    openPreviewPanel,
+    previewPanelOpen,
+  ]);
   const closePreviewPanel = useCallback(() => {
+    if (terminalWorkspace && !shouldUseRightPanelSheet) {
+      focusWorkspaceTerminal();
+      return;
+    }
     if (activeThreadRef) {
       useRightPanelStore.getState().close(activeThreadRef);
     }
-  }, [activeThreadRef]);
+  }, [terminalWorkspace, shouldUseRightPanelSheet, focusWorkspaceTerminal, activeThreadRef]);
   const addTerminalSurface = useCallback(() => {
+    if (terminalWorkspace) {
+      focusWorkspaceTerminal();
+      return;
+    }
     if (!activeThreadRef || !activeThreadId || !activeProject) return;
     const cwd = gitCwd ?? activeProject.workspaceRoot;
     const terminalId = nextTerminalId(allocatableActiveTerminalIds);
@@ -3566,6 +3700,8 @@ function ChatViewContent(props: ChatViewProps) {
       },
     });
   }, [
+    terminalWorkspace,
+    focusWorkspaceTerminal,
     activeProject,
     activeThreadId,
     activeThreadRef,
@@ -3576,6 +3712,7 @@ function ChatViewContent(props: ChatViewProps) {
   ]);
   const splitPanelTerminal = useCallback(
     (direction: "horizontal" | "vertical" = "horizontal") => {
+      if (terminalWorkspace) return;
       if (
         !activeThreadRef ||
         !activeThreadId ||
@@ -3606,6 +3743,7 @@ function ChatViewContent(props: ChatViewProps) {
       });
     },
     [
+      terminalWorkspace,
       activeProject,
       activeRightPanelSurface,
       activeThreadId,
@@ -3631,6 +3769,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const closePanelTerminal = useCallback(
     (terminalId: string) => {
+      if (terminalId === terminalWorkspace?.mainTerminalId) return;
       if (!activeThreadRef || activeRightPanelSurface?.kind !== "terminal") return;
       void closeTerminalMutation({
         environmentId: activeThreadRef.environmentId,
@@ -3642,7 +3781,13 @@ function ChatViewContent(props: ChatViewProps) {
         .closeTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId);
       setTerminalFocusRequestId((value) => value + 1);
     },
-    [activeRightPanelSurface, activeThreadRef, closeTerminalMutation, storeCloseTerminal],
+    [
+      terminalWorkspace,
+      activeRightPanelSurface,
+      activeThreadRef,
+      closeTerminalMutation,
+      storeCloseTerminal,
+    ],
   );
   const requestCloseTerminal = useCallback(
     (terminalId: string) => {
@@ -3681,6 +3826,11 @@ function ChatViewContent(props: ChatViewProps) {
   const handleWorkspaceAction = useCallback(
     (action: WorkspaceAction) => {
       if (!activeThreadRef) return;
+      if (terminalWorkspace && action === "restore-chat") return;
+      if (terminalWorkspace && action === "open-terminal") {
+        focusWorkspaceTerminal();
+        return;
+      }
       if (action === "restore-chat") {
         useRightPanelStore.getState().restoreSplit(activeThreadRef);
         return;
@@ -3733,6 +3883,8 @@ function ChatViewContent(props: ChatViewProps) {
       }
     },
     [
+      terminalWorkspace,
+      focusWorkspaceTerminal,
       activateRightPanelSurface,
       activeProject,
       activeThreadRef,
@@ -3748,17 +3900,31 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
   const toggleRightPanel = useCallback(() => {
+    if (terminalWorkspace) {
+      focusWorkspaceTerminal();
+      return;
+    }
     if (!activeThreadRef) return;
     if (rightPanelOpen) {
       closePreviewPanel();
       return;
     }
     useRightPanelStore.getState().toggleVisibility(activeThreadRef);
-  }, [activeThreadRef, closePreviewPanel, rightPanelOpen]);
+  }, [
+    terminalWorkspace,
+    focusWorkspaceTerminal,
+    activeThreadRef,
+    closePreviewPanel,
+    rightPanelOpen,
+  ]);
   const toggleRightPanelMaximized = useCallback(() => {
+    if (terminalWorkspace) {
+      focusWorkspaceTerminal();
+      return;
+    }
     if (!activeThreadRef || !canMaximizeRightPanel) return;
     useRightPanelStore.getState().toggleMaximized(activeThreadRef);
-  }, [activeThreadRef, canMaximizeRightPanel]);
+  }, [terminalWorkspace, focusWorkspaceTerminal, activeThreadRef, canMaximizeRightPanel]);
   const cleanupRightPanelSurfaces = useCallback(
     (surfaces: readonly RightPanelSurface[]) => {
       if (!activeThreadRef) return;
@@ -3773,6 +3939,7 @@ function ChatViewContent(props: ChatViewProps) {
         }
         if (surface.kind === "terminal") {
           for (const terminalId of surface.terminalIds) {
+            if (terminalId === terminalWorkspace?.mainTerminalId) continue;
             storeCloseTerminal(activeThreadRef, terminalId);
             void closeTerminalMutation({
               environmentId: activeThreadRef.environmentId,
@@ -3783,6 +3950,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
     },
     [
+      terminalWorkspace,
       activeThreadRef,
       activePreviewState.sessions,
       closePreview,
@@ -3803,6 +3971,7 @@ function ChatViewContent(props: ChatViewProps) {
   const closeRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
+      if (isMainTerminalSurface(surface, terminalWorkspace)) return;
       const finishClose = () => {
         cleanupRightPanelSurfaces([surface]);
         useRightPanelStore.getState().closeSurface(activeThreadRef, surface.id);
@@ -3825,6 +3994,7 @@ function ChatViewContent(props: ChatViewProps) {
       });
     },
     [
+      terminalWorkspace,
       activeThreadRef,
       activeTerminalLabelsById,
       cleanupRightPanelSurfaces,
@@ -3835,11 +4005,16 @@ function ChatViewContent(props: ChatViewProps) {
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
       const surfaces = rightPanelState.surfaces.filter((entry) => entry.id !== surface.id);
-      cleanupRightPanelSurfaces(surfaces);
-      useRightPanelStore.getState().closeOtherSurfaces(activeThreadRef, surface.id);
+      closeWorkspaceSurfaces({
+        surfaces,
+        binding: terminalWorkspace,
+        cleanup: cleanupRightPanelSurfaces,
+        close: (entry) => useRightPanelStore.getState().closeSurface(activeThreadRef, entry.id),
+      });
       syncActivePreviewSurface();
     },
     [
+      terminalWorkspace,
       activeThreadRef,
       cleanupRightPanelSurfaces,
       rightPanelState.surfaces,
@@ -3852,11 +4027,16 @@ function ChatViewContent(props: ChatViewProps) {
       const surfaceIndex = rightPanelState.surfaces.findIndex((entry) => entry.id === surface.id);
       if (surfaceIndex < 0) return;
       const surfaces = rightPanelState.surfaces.slice(surfaceIndex + 1);
-      cleanupRightPanelSurfaces(surfaces);
-      useRightPanelStore.getState().closeSurfacesToRight(activeThreadRef, surface.id);
+      closeWorkspaceSurfaces({
+        surfaces,
+        binding: terminalWorkspace,
+        cleanup: cleanupRightPanelSurfaces,
+        close: (entry) => useRightPanelStore.getState().closeSurface(activeThreadRef, entry.id),
+      });
       syncActivePreviewSurface();
     },
     [
+      terminalWorkspace,
       activeThreadRef,
       cleanupRightPanelSurfaces,
       rightPanelState.surfaces,
@@ -3865,9 +4045,50 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const closeAllRightPanelSurfaces = useCallback(() => {
     if (!activeThreadRef) return;
-    cleanupRightPanelSurfaces(rightPanelState.surfaces);
-    useRightPanelStore.getState().closeAllSurfaces(activeThreadRef);
-  }, [activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces]);
+    closeWorkspaceSurfaces({
+      surfaces: rightPanelState.surfaces,
+      binding: terminalWorkspace,
+      cleanup: cleanupRightPanelSurfaces,
+      close: (entry) => useRightPanelStore.getState().closeSurface(activeThreadRef, entry.id),
+    });
+  }, [terminalWorkspace, activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces]);
+  const useAsMainTerminal = useCallback(
+    (terminalId: string) => {
+      if (
+        !activeThreadRef ||
+        !activeServerThread ||
+        terminalWorkspace ||
+        activeServerThread.messages.length > 0 ||
+        activeServerThread.session
+      )
+        return;
+      for (const session of activeThreadKnownSessions)
+        useRightPanelStore.getState().openTerminal(activeThreadRef, session.target.terminalId);
+      const knownLaunch = activeThreadKnownSessions.find(
+        (entry) => entry.target.terminalId === terminalId,
+      )?.state.summary?.agentLaunch;
+      void updateThreadMetadata({
+        environmentId: activeThreadRef.environmentId,
+        input: {
+          threadId: activeThreadRef.threadId,
+          terminalWorkspace: {
+            mainTerminalId: terminalId,
+            startup:
+              knownLaunch?.status === "started"
+                ? { _tag: "agent", providerInstanceId: knownLaunch.providerInstanceId }
+                : { _tag: "shell" },
+          },
+        },
+      });
+    },
+    [
+      activeThreadRef,
+      activeServerThread,
+      terminalWorkspace,
+      activeThreadKnownSessions,
+      updateThreadMetadata,
+    ],
+  );
   const copyRightPanelFilePath = useCallback((relativePath: string) => {
     if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
       toastManager.add(
@@ -5413,6 +5634,7 @@ function ChatViewContent(props: ChatViewProps) {
     },
   ) => {
     e?.preventDefault();
+    if (terminalWorkspace) return;
     const notifyDirectAnnotationAttached = () => {
       if (!directAnnotation) return;
       toastManager.add(
@@ -6746,8 +6968,13 @@ function ChatViewContent(props: ChatViewProps) {
 
   const panelToggleControls = (
     <PanelLayoutControls
+      terminalWorkspace={!!terminalWorkspace}
       terminalAvailable={activeProject !== null}
-      terminalOpen={terminalUiState.terminalOpen}
+      terminalOpen={
+        terminalWorkspace
+          ? activeRightPanelSurface?.kind === "terminal"
+          : terminalUiState.terminalOpen
+      }
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
       rightPanelAvailable={activeProject !== null}
       rightPanelOpen={rightPanelOpen}
@@ -6771,7 +6998,7 @@ function ChatViewContent(props: ChatViewProps) {
       )}
       data-workspace-titlebar-controls
     >
-      {rightPanelOpen && !shouldUseRightPanelSheet ? (
+      {!terminalWorkspace && rightPanelOpen && !shouldUseRightPanelSheet ? (
         <RightPanelMaximizeControl
           maximized={rightPanelMaximized}
           onToggle={toggleRightPanelMaximized}
@@ -6902,426 +7129,458 @@ function ChatViewContent(props: ChatViewProps) {
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
       {rightPanelOpen && !shouldUseRightPanelSheet ? panelLayoutControls : null}
-      <div
-        className={cn(
-          "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
-          rightPanelMaximized ? "w-0 flex-none" : "flex-1",
-        )}
-        data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
-      >
-        {/* Top bar */}
-        <WorkspacePageHeader
-          data-chat-header
-          electron={isElectron}
-          reserveNativeControls={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
-          className="relative bg-background"
+      {!terminalWorkspace ? (
+        <div
+          className={cn(
+            "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
+            rightPanelMaximized ? "w-0 flex-none" : "flex-1",
+          )}
+          data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
         >
-          {!rightPanelOpen ? panelLayoutControls : null}
-          <ChatHeader
-            {...(!supportsPullRequests || activeProjectRepository === null
-              ? {}
-              : { onOpenPullRequest: openProjectPullRequest })}
-            activeThreadEnvironmentId={activeThread.environmentId}
-            activeThreadId={activeThread.id}
-            {...(routeKind === "draft" && draftId ? { draftId } : {})}
-            activeThreadTitle={activeThread.title}
-            isServerThread={isServerThread}
-            changeRequest={activeThreadChangeRequest}
-            activeProjectName={activeProject?.title}
-            activeProjectCwd={activeProject?.workspaceRoot ?? null}
-            activeProjectFaviconPath={activeProject?.faviconPath ?? null}
-            openInCwd={gitCwd}
-            activeProjectScripts={activeProject?.scripts}
-            preferredScriptId={
-              activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
-            }
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            rightPanelOpen={rightPanelOpen}
-            gitCwd={gitCwd}
-            onNewThreadInProject={handleNewThreadInActiveProject}
-            onRunProjectScript={runProjectScript}
-            onAddProjectScript={saveProjectScript}
-            onUpdateProjectScript={updateProjectScript}
-            onDeleteProjectScript={deleteProjectScript}
-          />
-        </WorkspacePageHeader>
-
-        <ThreadErrorBanner
-          error={visibleThreadError}
-          onDismiss={() => {
-            setThreadError(activeThread.id, null);
-            dismissThreadErrorBannerForSession(threadErrorBannerKey);
-            setThreadErrorBannerDismissTick((tick) => tick + 1);
-          }}
-        />
-        {/* Main content area with optional plan sidebar */}
-        <div className="flex min-h-0 min-w-0 flex-1">
-          {/* Chat column */}
-          <div
-            className="relative flex min-h-0 min-w-0 flex-1 flex-col"
-            data-chat-workspace-drop-target="true"
-            onDragEnter={workspaceFileDropHandlers.onDragEnter}
-            onDragOver={workspaceFileDropHandlers.onDragOver}
-            onDragLeave={workspaceFileDropHandlers.onDragLeave}
-            onDrop={workspaceFileDropHandlers.onDrop}
+          {/* Top bar */}
+          <WorkspacePageHeader
+            data-chat-header
+            electron={isElectron}
+            reserveNativeControls={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
+            className="relative bg-background"
           >
-            {isWorkspaceFileDragActive ? (
-              <div
-                className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/60 bg-primary/[0.035]"
-                data-chat-workspace-drop-overlay="true"
-              >
-                <div
-                  role="status"
-                  className="flex items-center gap-2 rounded-full border border-primary/25 bg-background/95 px-4 py-2.5 text-sm font-medium text-foreground shadow-lg"
-                >
-                  <PaperclipIcon className="size-4 text-primary" aria-hidden="true" />
-                  Drop files to attach
-                </div>
-              </div>
-            ) : null}
-            {/* Provider status overlays the timeline without changing its content height. */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-20">
-              <ProviderStatusBanner
-                status={visibleProviderStatus}
-                onDismiss={() => setDismissedProviderStatusBannerKey(providerStatusBannerKey)}
-              />
-            </div>
-            {/* Messages Wrapper */}
-            <div className="relative flex min-h-0 flex-1 flex-col">
-              {/* Messages — LegendList handles virtualization and scrolling internally */}
-              <MessagesTimeline
-                agentPanelModel={agentPanelModel}
-                onOpenAgents={addAgentsSurface}
-                key={activeThread.id}
-                isWorking={isWorking}
-                workingStepLabel={workingStepLabel}
-                activeTurnStartedAt={activeWorkStartedAt}
-                listRef={legendListRef}
-                timelineEntries={timelineEntries}
-                latestTurn={activeLatestTurn}
-                runningTurnId={activeRunningTurnId}
-                turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
-                activeThreadEnvironmentId={activeThread.environmentId}
-                routeThreadKey={routeThreadKey}
-                onOpenTurnDiff={onOpenTurnDiff}
-                revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
-                onRevertUserMessage={onRevertUserMessage}
-                isRevertingCheckpoint={isRevertingCheckpoint}
-                onImageExpand={onExpandTimelineImage}
-                markdownCwd={gitCwd ?? undefined}
-                resolvedTheme={resolvedTheme}
-                timestampFormat={timestampFormat}
-                workspaceRoot={activeWorkspaceRoot}
-                skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
-                anchorMessageId={timelineAnchorMessageId}
-                onAnchorReady={onTimelineAnchorReady}
-                contentInsetEndAdjustment={composerOverlayHeight}
-                liveFollowEnabled={timelineLiveFollowEnabled}
-                onIsAtEndChange={onIsAtEndChange}
-                onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
-                hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
-                topFadeEnabled={!hasTimelineTopBanner}
-                loadEarlier={loadEarlierTurns}
-              />
-
-              {/* scroll to end pill — shown when user has scrolled away from the live edge */}
-              {showScrollToBottom && (
-                <div
-                  className="pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
-                  style={{ bottom: composerOverlayHeight + 4 }}
-                >
-                  <Button
-                    aria-label="Scroll to end"
-                    onClick={() => scrollToEnd(true)}
-                    className="pointer-events-auto gap-1.5 rounded-full px-3 text-muted-foreground hover:text-foreground"
-                    size="xs"
-                    variant="glass"
-                  >
-                    <ChevronDownIcon className="size-3.5" />
-                    Scroll to end
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise */}
-            <div
-              ref={setComposerOverlayElement}
-              data-chat-composer-overlay="true"
-              className={
-                isDraftHeroState
-                  ? "pointer-events-none absolute inset-0 z-20 flex items-center"
-                  : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
+            {!rightPanelOpen ? panelLayoutControls : null}
+            <ChatHeader
+              {...(!supportsPullRequests || activeProjectRepository === null
+                ? {}
+                : { onOpenPullRequest: openProjectPullRequest })}
+              activeThreadEnvironmentId={activeThread.environmentId}
+              activeThreadId={activeThread.id}
+              {...(routeKind === "draft" && draftId ? { draftId } : {})}
+              activeThreadTitle={activeThread.title}
+              isServerThread={isServerThread}
+              changeRequest={activeThreadChangeRequest}
+              activeProjectName={activeProject?.title}
+              activeProjectCwd={activeProject?.workspaceRoot ?? null}
+              activeProjectFaviconPath={activeProject?.faviconPath ?? null}
+              openInCwd={gitCwd}
+              activeProjectScripts={activeProject?.scripts}
+              preferredScriptId={
+                activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
               }
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              rightPanelOpen={rightPanelOpen}
+              gitCwd={gitCwd}
+              onNewThreadInProject={handleNewThreadInActiveProject}
+              onRunProjectScript={runProjectScript}
+              onAddProjectScript={saveProjectScript}
+              onUpdateProjectScript={updateProjectScript}
+              onDeleteProjectScript={deleteProjectScript}
+            />
+          </WorkspacePageHeader>
+
+          <ThreadErrorBanner
+            error={visibleThreadError}
+            onDismiss={() => {
+              setThreadError(activeThread.id, null);
+              dismissThreadErrorBannerForSession(threadErrorBannerKey);
+              setThreadErrorBannerDismissTick((tick) => tick + 1);
+            }}
+          />
+          {/* Main content area with optional plan sidebar */}
+          <div className="flex min-h-0 min-w-0 flex-1">
+            {/* Chat column */}
+            <div
+              className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+              data-chat-workspace-drop-target="true"
+              onDragEnter={workspaceFileDropHandlers.onDragEnter}
+              onDragOver={workspaceFileDropHandlers.onDragOver}
+              onDragLeave={workspaceFileDropHandlers.onDragLeave}
+              onDrop={workspaceFileDropHandlers.onDrop}
             >
-              <div
-                ref={attachDraftHeroTransitionGroupRef}
-                className="w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
-              >
-                <div className="pointer-events-auto relative z-10">
-                  {isDraftHeroState ? (
-                    <div className="absolute inset-x-0 bottom-full z-0">
-                      <div
-                        className="pb-8"
-                        style={
-                          forceExpandedMobileComposer
-                            ? {
-                                viewTransitionName: MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
-                              }
-                            : undefined
-                        }
-                      >
-                        <DraftHeroHeadline
-                          activeProjectRef={activeProjectRef}
-                          activeProjectTitle={activeProject?.title ?? null}
-                        />
-                      </div>
-                      <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
-                    </div>
-                  ) : (
-                    <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
-                  )}
-                  {threadSyncPhase && !activeEnvironmentUnavailable ? (
-                    <ThreadSyncStatusPill phase={threadSyncPhase} />
-                  ) : null}
+              {isWorkspaceFileDragActive ? (
+                <div
+                  className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/60 bg-primary/[0.035]"
+                  data-chat-workspace-drop-overlay="true"
+                >
                   <div
-                    className="relative"
-                    style={
-                      forceExpandedMobileComposer
-                        ? { viewTransitionName: MOBILE_COMPOSER_VIEW_TRANSITION_NAME }
-                        : undefined
-                    }
+                    role="status"
+                    className="flex items-center gap-2 rounded-full border border-primary/25 bg-background/95 px-4 py-2.5 text-sm font-medium text-foreground shadow-lg"
                   >
-                    <div
-                      className={cn(
-                        "chat-composer-glass-shell relative mx-auto w-full max-w-3xl",
-                        externalComposerDrawerAttached && "chat-composer-glass-shell-attached",
-                        showComposerContextStrip && "chat-composer-glass-shell-with-context",
-                      )}
+                    <PaperclipIcon className="size-4 text-primary" aria-hidden="true" />
+                    Drop files to attach
+                  </div>
+                </div>
+              ) : null}
+              {/* Provider status overlays the timeline without changing its content height. */}
+              <div className="pointer-events-none absolute inset-x-0 top-0 z-20">
+                <ProviderStatusBanner
+                  status={visibleProviderStatus}
+                  onDismiss={() => setDismissedProviderStatusBannerKey(providerStatusBannerKey)}
+                />
+              </div>
+              {/* Messages Wrapper */}
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                {/* Messages — LegendList handles virtualization and scrolling internally */}
+                <MessagesTimeline
+                  agentPanelModel={agentPanelModel}
+                  onOpenAgents={addAgentsSurface}
+                  key={activeThread.id}
+                  isWorking={isWorking}
+                  workingStepLabel={workingStepLabel}
+                  activeTurnStartedAt={activeWorkStartedAt}
+                  listRef={legendListRef}
+                  timelineEntries={timelineEntries}
+                  latestTurn={activeLatestTurn}
+                  runningTurnId={activeRunningTurnId}
+                  turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+                  activeThreadEnvironmentId={activeThread.environmentId}
+                  routeThreadKey={routeThreadKey}
+                  onOpenTurnDiff={onOpenTurnDiff}
+                  revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
+                  onRevertUserMessage={onRevertUserMessage}
+                  isRevertingCheckpoint={isRevertingCheckpoint}
+                  onImageExpand={onExpandTimelineImage}
+                  markdownCwd={gitCwd ?? undefined}
+                  resolvedTheme={resolvedTheme}
+                  timestampFormat={timestampFormat}
+                  workspaceRoot={activeWorkspaceRoot}
+                  skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
+                  anchorMessageId={timelineAnchorMessageId}
+                  onAnchorReady={onTimelineAnchorReady}
+                  contentInsetEndAdjustment={composerOverlayHeight}
+                  liveFollowEnabled={timelineLiveFollowEnabled}
+                  onIsAtEndChange={onIsAtEndChange}
+                  onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
+                  hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
+                  topFadeEnabled={!hasTimelineTopBanner}
+                  loadEarlier={loadEarlierTurns}
+                />
+
+                {/* scroll to end pill — shown when user has scrolled away from the live edge */}
+                {showScrollToBottom && (
+                  <div
+                    className="pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
+                    style={{ bottom: composerOverlayHeight + 4 }}
+                  >
+                    <Button
+                      aria-label="Scroll to end"
+                      onClick={() => scrollToEnd(true)}
+                      className="pointer-events-auto gap-1.5 rounded-full px-3 text-muted-foreground hover:text-foreground"
+                      size="xs"
+                      variant="glass"
                     >
-                      <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
-                        <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
-                          <ChatComposer
-                            composerRef={composerRef}
-                            composerDraftTarget={composerDraftTarget}
-                            environmentId={environmentId}
-                            attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}
-                            supportsAttachmentUploads={supportsAttachmentUploads}
-                            routeKind={routeKind}
-                            routeThreadRef={routeThreadRef}
-                            draftId={draftId}
-                            activeThreadId={activeThreadId}
-                            activeThreadEnvironmentId={activeThread?.environmentId}
-                            activeThread={activeThread}
-                            isServerThread={isServerThread}
-                            isLocalDraftThread={isLocalDraftThread}
-                            forceExpandedOnMobile={forceExpandedMobileComposer && isDraftHeroState}
-                            projectSelectionRequired={isLocalDraftThread && activeProject === null}
-                            phase={phase}
-                            isConnecting={isConnecting}
-                            isSendBusy={isSendBusy}
-                            sendDisabledReason={
-                              feedbackUploading
-                                ? "Sending feedback"
-                                : threadDetailLoading
-                                  ? "Messages loading"
-                                  : null
-                            }
-                            isPreparingWorktree={isPreparingWorktree}
-                            externalDrawerAttached={externalComposerDrawerAttached}
-                            environmentUnavailable={activeEnvironmentUnavailableState}
-                            activePendingApproval={activePendingApproval}
-                            pendingApprovals={pendingApprovals}
-                            pendingUserInputs={pendingUserInputs}
-                            activePendingProgress={activePendingProgress}
-                            activePendingResolvedAnswers={activePendingResolvedAnswers}
-                            activePendingIsResponding={activePendingIsResponding}
-                            activePendingDraftAnswers={activePendingDraftAnswers}
-                            activePendingQuestionIndex={activePendingQuestionIndex}
-                            respondingRequestIds={respondingRequestIds}
-                            showPlanFollowUpPrompt={showPlanFollowUpPrompt}
-                            activeProposedPlan={activeProposedPlan}
-                            activeTasksProgress={activeComposerTasksProgress}
-                            activeTaskSteps={activeComposerTaskSteps}
-                            runtimeMode={runtimeMode}
-                            interactionMode={interactionMode}
-                            lockedProvider={lockedProvider}
-                            providerStatuses={providerStatuses as ServerProvider[]}
-                            activeProjectDefaultModelSelection={
-                              activeProject?.defaultModelSelection
-                            }
-                            activeThreadModelSelection={activeThread?.modelSelection}
-                            activeContextWindow={activeContextWindow}
-                            compactDisabled={compactDisabled}
-                            compactDisabledReason={compactDisabledReason}
-                            resolvedTheme={resolvedTheme}
-                            settings={settings}
-                            keybindings={keybindings}
-                            terminalOpen={Boolean(terminalUiState.terminalOpen)}
-                            gitCwd={gitCwd}
-                            promptRef={promptRef}
-                            composerImagesRef={composerImagesRef}
-                            composerTerminalContextsRef={composerTerminalContextsRef}
-                            composerElementContextsRef={composerElementContextsRef}
-                            onSend={onSend}
-                            onInterrupt={onInterrupt}
-                            onImplementPlanInNewThread={onImplementPlanInNewThread}
-                            onRespondToApproval={onRespondToApproval}
-                            onSelectActivePendingUserInputOption={
-                              onSelectActivePendingUserInputOption
-                            }
-                            onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
-                            onPreviousActivePendingUserInputQuestion={
-                              onPreviousActivePendingUserInputQuestion
-                            }
-                            onChangeActivePendingUserInputCustomAnswer={
-                              onChangeActivePendingUserInputCustomAnswer
-                            }
-                            onProviderModelSelect={onProviderModelSelect}
-                            getModelDisabledReason={getModelDisabledReason}
-                            toggleInteractionMode={toggleInteractionMode}
-                            handleRuntimeModeChange={handleRuntimeModeChange}
-                            handleInteractionModeChange={handleInteractionModeChange}
-                            focusComposer={focusComposer}
-                            scheduleComposerFocus={scheduleComposerFocus}
-                            setThreadError={setThreadError}
-                            onExpandImage={onExpandTimelineImage}
+                      <ChevronDownIcon className="size-3.5" />
+                      Scroll to end
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise */}
+              <div
+                ref={setComposerOverlayElement}
+                data-chat-composer-overlay="true"
+                className={
+                  isDraftHeroState
+                    ? "pointer-events-none absolute inset-0 z-20 flex items-center"
+                    : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
+                }
+              >
+                <div
+                  ref={attachDraftHeroTransitionGroupRef}
+                  className="w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
+                >
+                  <div className="pointer-events-auto relative z-10">
+                    {isDraftHeroState ? (
+                      <div className="absolute inset-x-0 bottom-full z-0">
+                        <div
+                          className="pb-8"
+                          style={
+                            forceExpandedMobileComposer
+                              ? {
+                                  viewTransitionName: MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
+                                }
+                              : undefined
+                          }
+                        >
+                          <DraftHeroHeadline
+                            activeProjectRef={activeProjectRef}
+                            activeProjectTitle={activeProject?.title ?? null}
                           />
                         </div>
+                        <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
                       </div>
-                      <div className="min-h-0">
-                        <div
-                          data-terminal-open={terminalUiState.terminalOpen ? "true" : undefined}
-                          className="relative z-0"
-                        >
-                          {showComposerContextStrip && (
-                            <div className="pointer-events-auto">
-                              <BranchToolbar
-                                environmentId={activeThread.environmentId}
-                                threadId={activeThread.id}
-                                showGitControls={isGitRepo}
-                                {...(routeKind === "draft" && draftId ? { draftId } : {})}
-                                onEnvModeChange={onEnvModeChange}
-                                startFromOrigin={startFromOrigin}
-                                onStartFromOriginChange={onStartFromOriginChange}
-                                {...(canOverrideServerThreadEnvMode
-                                  ? { effectiveEnvModeOverride: envMode }
-                                  : {})}
-                                {...(canOverrideServerThreadEnvMode
-                                  ? {
-                                      activeThreadBranchOverride: activeThreadBranch,
-                                      onActiveThreadBranchOverrideChange:
-                                        setPendingServerThreadBranch,
-                                    }
-                                  : {})}
-                                envLocked={envLocked}
-                                onComposerFocusRequest={scheduleComposerFocus}
-                                {...(canCheckoutPullRequestIntoThread
-                                  ? { onCheckoutPullRequestRequest: openPullRequestDialog }
-                                  : {})}
-                                {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
-                                availableEnvironments={logicalProjectEnvironments}
-                              />
-                            </div>
-                          )}
+                    ) : (
+                      <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
+                    )}
+                    {threadSyncPhase && !activeEnvironmentUnavailable ? (
+                      <ThreadSyncStatusPill phase={threadSyncPhase} />
+                    ) : null}
+                    <div
+                      className="relative"
+                      style={
+                        forceExpandedMobileComposer
+                          ? { viewTransitionName: MOBILE_COMPOSER_VIEW_TRANSITION_NAME }
+                          : undefined
+                      }
+                    >
+                      <div
+                        className={cn(
+                          "chat-composer-glass-shell relative mx-auto w-full max-w-3xl",
+                          externalComposerDrawerAttached && "chat-composer-glass-shell-attached",
+                          showComposerContextStrip && "chat-composer-glass-shell-with-context",
+                        )}
+                      >
+                        <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
+                          <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
+                            <ChatComposer
+                              composerRef={composerRef}
+                              composerDraftTarget={composerDraftTarget}
+                              environmentId={environmentId}
+                              attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}
+                              supportsAttachmentUploads={supportsAttachmentUploads}
+                              routeKind={routeKind}
+                              routeThreadRef={routeThreadRef}
+                              draftId={draftId}
+                              activeThreadId={activeThreadId}
+                              activeThreadEnvironmentId={activeThread?.environmentId}
+                              activeThread={activeThread}
+                              isServerThread={isServerThread}
+                              isLocalDraftThread={isLocalDraftThread}
+                              forceExpandedOnMobile={
+                                forceExpandedMobileComposer && isDraftHeroState
+                              }
+                              projectSelectionRequired={
+                                isLocalDraftThread && activeProject === null
+                              }
+                              phase={phase}
+                              isConnecting={isConnecting}
+                              isSendBusy={isSendBusy}
+                              sendDisabledReason={
+                                feedbackUploading
+                                  ? "Sending feedback"
+                                  : threadDetailLoading
+                                    ? "Messages loading"
+                                    : null
+                              }
+                              isPreparingWorktree={isPreparingWorktree}
+                              externalDrawerAttached={externalComposerDrawerAttached}
+                              environmentUnavailable={activeEnvironmentUnavailableState}
+                              activePendingApproval={activePendingApproval}
+                              pendingApprovals={pendingApprovals}
+                              pendingUserInputs={pendingUserInputs}
+                              activePendingProgress={activePendingProgress}
+                              activePendingResolvedAnswers={activePendingResolvedAnswers}
+                              activePendingIsResponding={activePendingIsResponding}
+                              activePendingDraftAnswers={activePendingDraftAnswers}
+                              activePendingQuestionIndex={activePendingQuestionIndex}
+                              respondingRequestIds={respondingRequestIds}
+                              showPlanFollowUpPrompt={showPlanFollowUpPrompt}
+                              activeProposedPlan={activeProposedPlan}
+                              activeTasksProgress={activeComposerTasksProgress}
+                              activeTaskSteps={activeComposerTaskSteps}
+                              runtimeMode={runtimeMode}
+                              interactionMode={interactionMode}
+                              lockedProvider={lockedProvider}
+                              providerStatuses={providerStatuses as ServerProvider[]}
+                              activeProjectDefaultModelSelection={
+                                activeProject?.defaultModelSelection
+                              }
+                              activeThreadModelSelection={activeThread?.modelSelection}
+                              activeContextWindow={activeContextWindow}
+                              compactDisabled={compactDisabled}
+                              compactDisabledReason={compactDisabledReason}
+                              resolvedTheme={resolvedTheme}
+                              settings={settings}
+                              keybindings={keybindings}
+                              terminalOpen={Boolean(terminalUiState.terminalOpen)}
+                              gitCwd={gitCwd}
+                              promptRef={promptRef}
+                              composerImagesRef={composerImagesRef}
+                              composerTerminalContextsRef={composerTerminalContextsRef}
+                              composerElementContextsRef={composerElementContextsRef}
+                              onSend={onSend}
+                              onInterrupt={onInterrupt}
+                              onImplementPlanInNewThread={onImplementPlanInNewThread}
+                              onRespondToApproval={onRespondToApproval}
+                              onSelectActivePendingUserInputOption={
+                                onSelectActivePendingUserInputOption
+                              }
+                              onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
+                              onPreviousActivePendingUserInputQuestion={
+                                onPreviousActivePendingUserInputQuestion
+                              }
+                              onChangeActivePendingUserInputCustomAnswer={
+                                onChangeActivePendingUserInputCustomAnswer
+                              }
+                              onProviderModelSelect={onProviderModelSelect}
+                              getModelDisabledReason={getModelDisabledReason}
+                              toggleInteractionMode={toggleInteractionMode}
+                              handleRuntimeModeChange={handleRuntimeModeChange}
+                              handleInteractionModeChange={handleInteractionModeChange}
+                              focusComposer={focusComposer}
+                              scheduleComposerFocus={scheduleComposerFocus}
+                              setThreadError={setThreadError}
+                              onExpandImage={onExpandTimelineImage}
+                            />
+                          </div>
+                        </div>
+                        <div className="min-h-0">
+                          <div
+                            data-terminal-open={terminalUiState.terminalOpen ? "true" : undefined}
+                            className="relative z-0"
+                          >
+                            {showComposerContextStrip && (
+                              <div className="pointer-events-auto">
+                                <BranchToolbar
+                                  environmentId={activeThread.environmentId}
+                                  threadId={activeThread.id}
+                                  showGitControls={isGitRepo}
+                                  {...(routeKind === "draft" && draftId ? { draftId } : {})}
+                                  onEnvModeChange={onEnvModeChange}
+                                  startFromOrigin={startFromOrigin}
+                                  onStartFromOriginChange={onStartFromOriginChange}
+                                  {...(canOverrideServerThreadEnvMode
+                                    ? { effectiveEnvModeOverride: envMode }
+                                    : {})}
+                                  {...(canOverrideServerThreadEnvMode
+                                    ? {
+                                        activeThreadBranchOverride: activeThreadBranch,
+                                        onActiveThreadBranchOverrideChange:
+                                          setPendingServerThreadBranch,
+                                      }
+                                    : {})}
+                                  envLocked={envLocked}
+                                  onComposerFocusRequest={scheduleComposerFocus}
+                                  {...(canCheckoutPullRequestIntoThread
+                                    ? { onCheckoutPullRequestRequest: openPullRequestDialog }
+                                    : {})}
+                                  {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
+                                  availableEnvironments={logicalProjectEnvironments}
+                                />
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
+                      <div
+                        aria-hidden
+                        className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
+                      />
                     </div>
-                    <div
-                      aria-hidden
-                      className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
-                    />
                   </div>
                 </div>
               </div>
+
+              {activeThreadRef && activePreviewMiniPlayer ? (
+                <ThreadPreviewMiniPlayer
+                  key={`${activeThreadKey}:${activePreviewMiniPlayer.tabId}`}
+                  threadRef={activeThreadRef}
+                  tabId={activePreviewMiniPlayer.tabId}
+                  bottomInset={isDraftHeroState ? 0 : composerOverlayHeight}
+                />
+              ) : null}
+
+              <AlertDialog
+                open={branchRestoreConfirmOpen}
+                onOpenChange={setBranchRestoreConfirmOpen}
+              >
+                <AlertDialogPopup>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      Switch to{" "}
+                      <code className="font-medium">
+                        {localCheckoutBranchMismatch?.threadBranch ?? ""}
+                      </code>
+                      ?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      You have uncommitted changes. They'll carry over to the other branch, or block
+                      the switch if they conflict.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogClose render={<Button variant="outline" />}>
+                      Cancel
+                    </AlertDialogClose>
+                    <Button
+                      variant="default"
+                      onClick={() => {
+                        setBranchRestoreConfirmOpen(false);
+                        void handleSwitchCheckoutToThread();
+                      }}
+                    >
+                      Switch branch
+                    </Button>
+                  </AlertDialogFooter>
+                </AlertDialogPopup>
+              </AlertDialog>
+
+              {pullRequestDialogState ? (
+                <PullRequestThreadDialog
+                  key={pullRequestDialogState.key}
+                  open
+                  environmentId={activeThread.environmentId}
+                  threadId={activeThread.id}
+                  cwd={activeProject?.workspaceRoot ?? null}
+                  initialReference={pullRequestDialogState.initialReference}
+                  onOpenChange={(open) => {
+                    if (!open) {
+                      closePullRequestDialog();
+                    }
+                  }}
+                  onPrepared={handlePreparedPullRequestThread}
+                />
+              ) : null}
             </div>
-
-            {activeThreadRef && activePreviewMiniPlayer ? (
-              <ThreadPreviewMiniPlayer
-                key={`${activeThreadKey}:${activePreviewMiniPlayer.tabId}`}
-                threadRef={activeThreadRef}
-                tabId={activePreviewMiniPlayer.tabId}
-                bottomInset={isDraftHeroState ? 0 : composerOverlayHeight}
-              />
-            ) : null}
-
-            <AlertDialog open={branchRestoreConfirmOpen} onOpenChange={setBranchRestoreConfirmOpen}>
-              <AlertDialogPopup>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    Switch to{" "}
-                    <code className="font-medium">
-                      {localCheckoutBranchMismatch?.threadBranch ?? ""}
-                    </code>
-                    ?
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    You have uncommitted changes. They'll carry over to the other branch, or block
-                    the switch if they conflict.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-                  <Button
-                    variant="default"
-                    onClick={() => {
-                      setBranchRestoreConfirmOpen(false);
-                      void handleSwitchCheckoutToThread();
-                    }}
-                  >
-                    Switch branch
-                  </Button>
-                </AlertDialogFooter>
-              </AlertDialogPopup>
-            </AlertDialog>
-
-            {pullRequestDialogState ? (
-              <PullRequestThreadDialog
-                key={pullRequestDialogState.key}
-                open
-                environmentId={activeThread.environmentId}
-                threadId={activeThread.id}
-                cwd={activeProject?.workspaceRoot ?? null}
-                initialReference={pullRequestDialogState.initialReference}
-                onOpenChange={(open) => {
-                  if (!open) {
-                    closePullRequestDialog();
-                  }
-                }}
-                onPrepared={handlePreparedPullRequestThread}
-              />
-            ) : null}
+            {/* end chat column */}
           </div>
-          {/* end chat column */}
-        </div>
-        {/* end horizontal flex container */}
+          {/* end horizontal flex container */}
 
-        {mountedTerminalThreadRefs.map(({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
-          <PersistentThreadTerminalDrawer
-            key={mountedThreadKey}
-            threadRef={mountedThreadRef}
-            threadId={mountedThreadRef.threadId}
-            visible={mountedThreadKey === activeThreadKey && terminalUiState.terminalOpen}
-            launchContext={
-              mountedThreadKey === activeThreadKey ? (activeTerminalLaunchContext ?? null) : null
-            }
-            focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
-            splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
-            splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
-            newShortcutLabel={newTerminalShortcutLabel ?? undefined}
-            closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
-            keybindings={keybindings}
-            onAddTerminalContext={addTerminalContextToDraft}
-          />
-        ))}
-      </div>
+          {mountedTerminalThreadRefs.map(
+            ({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
+              <PersistentThreadTerminalDrawer
+                key={mountedThreadKey}
+                threadRef={mountedThreadRef}
+                threadId={mountedThreadRef.threadId}
+                visible={mountedThreadKey === activeThreadKey && terminalUiState.terminalOpen}
+                launchContext={
+                  mountedThreadKey === activeThreadKey
+                    ? (activeTerminalLaunchContext ?? null)
+                    : null
+                }
+                focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
+                splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+                splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
+                newShortcutLabel={newTerminalShortcutLabel ?? undefined}
+                closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
+                keybindings={keybindings}
+                onAddTerminalContext={addTerminalContextToDraft}
+              />
+            ),
+          )}
+        </div>
+      ) : shouldUseRightPanelSheet ? (
+        <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 p-4">
+          <p className="text-sm">{activeThread.title}</p>
+          <p className="text-xs text-muted-foreground">
+            This session uses a terminal workspace. Chat is coming soon.
+          </p>
+          <Button onClick={focusWorkspaceTerminal}>Open terminal workspace</Button>
+        </div>
+      ) : null}
 
       {!shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
         <RightPanelTabs
           mode="inline"
           maximized={rightPanelMaximized}
           surfaces={rightPanelState.surfaces}
+          mainTerminalId={terminalWorkspace?.mainTerminalId}
+          onUseAsMainTerminal={
+            !terminalWorkspace &&
+            activeServerThread?.messages.length === 0 &&
+            !activeServerThread.session &&
+            serverConfig?.environment.capabilities.terminalWorkspaceSessions === true
+              ? useAsMainTerminal
+              : undefined
+          }
           activeSurfaceId={activeRightPanelSurface?.id ?? null}
           pendingSurfaceIds={pendingFileSurfaceIds}
           previewSessions={activePreviewState.sessions}
@@ -7362,6 +7621,15 @@ function ChatViewContent(props: ChatViewProps) {
             // the sheet opens.
             layoutControls={<div className="mr-px flex items-center">{panelToggleControls}</div>}
             surfaces={rightPanelState.surfaces}
+            mainTerminalId={terminalWorkspace?.mainTerminalId}
+            onUseAsMainTerminal={
+              !terminalWorkspace &&
+              activeServerThread?.messages.length === 0 &&
+              !activeServerThread.session &&
+              serverConfig?.environment.capabilities.terminalWorkspaceSessions === true
+                ? useAsMainTerminal
+                : undefined
+            }
             activeSurfaceId={activeRightPanelSurface?.id ?? null}
             pendingSurfaceIds={pendingFileSurfaceIds}
             previewSessions={activePreviewState.sessions}

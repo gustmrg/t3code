@@ -301,6 +301,9 @@ export function projectEvent(
             interactionMode: payload.interactionMode,
             branch: payload.branch,
             worktreePath: payload.worktreePath,
+            ...(payload.terminalWorkspace !== undefined
+              ? { terminalWorkspace: payload.terminalWorkspace }
+              : {}),
             latestTurn: null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -471,6 +474,9 @@ export function projectEvent(
               ? { modelSelection: payload.modelSelection }
               : {}),
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
+            ...(payload.terminalWorkspace !== undefined
+              ? { terminalWorkspace: payload.terminalWorkspace }
+              : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
             ...(payload.linkedPullRequest !== undefined
               ? { linkedPullRequest: payload.linkedPullRequest }

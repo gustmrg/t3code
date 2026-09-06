@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 
+import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const DefaultThreadView = Schema.Literals(["chat", "terminal"]);
@@ -24,3 +25,10 @@ export const ProjectThreadLaunchPreference = Schema.Struct({
   terminalStartup: Schema.optionalKey(TerminalStartup),
 });
 export type ProjectThreadLaunchPreference = typeof ProjectThreadLaunchPreference.Type;
+
+/** Durable identity and captured launch intent; neither a PID nor a native conversation ID. */
+export const TerminalWorkspaceBinding = Schema.Struct({
+  mainTerminalId: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+  startup: TerminalStartup,
+});
+export type TerminalWorkspaceBinding = typeof TerminalWorkspaceBinding.Type;

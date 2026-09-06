@@ -1,3 +1,4 @@
+import { projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -59,6 +60,8 @@ import {
   ThreadId,
   type TerminalAttachStreamEvent,
   type TerminalError,
+  type TerminalOpenInput,
+  TerminalSessionLookupError,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   WS_METHODS,
@@ -531,12 +534,80 @@ const makeWsRpcLayer = (
           requiredScope,
         });
 
+      const resolveMainTerminalContext = Effect.fn("ws.resolveMainTerminalContext")(function* <
+        T extends TerminalOpenInput,
+      >(input: T) {
+        const thread = yield* projectionSnapshotQuery
+          .getThreadShellById(ThreadId.make(input.threadId))
+          .pipe(
+            Effect.mapError(
+              () =>
+                new TerminalSessionLookupError({
+                  threadId: input.threadId,
+                  terminalId: input.terminalId,
+                }),
+            ),
+          );
+        const binding = Option.isSome(thread) ? thread.value.terminalWorkspace : null;
+        if (!binding || binding.mainTerminalId !== input.terminalId || Option.isNone(thread))
+          return { input, main: false };
+        const project = yield* projectionSnapshotQuery
+          .getProjectShellById(thread.value.projectId)
+          .pipe(
+            Effect.mapError(
+              () =>
+                new TerminalSessionLookupError({
+                  threadId: input.threadId,
+                  terminalId: input.terminalId,
+                }),
+            ),
+          );
+        if (Option.isNone(project))
+          return yield* new TerminalSessionLookupError({
+            threadId: input.threadId,
+            terminalId: input.terminalId,
+          });
+        const { agentLaunch: _launch, ...base } = input;
+        const worktreePath = thread.value.worktreePath;
+        const provider =
+          binding.startup._tag === "agent"
+            ? yield* providerRegistry.getTerminalLaunchTarget(binding.startup.providerInstanceId)
+            : undefined;
+        const launchEnvironment =
+          provider?.enabled && provider.terminalLaunch
+            ? Object.fromEntries(
+                Object.entries(provider.terminalLaunch.environment).filter(
+                  (entry): entry is [string, string] => entry[1] !== undefined,
+                ),
+              )
+            : {};
+        return {
+          main: true,
+          input: {
+            ...base,
+            cwd: worktreePath ?? project.value.workspaceRoot,
+            worktreePath,
+            env: {
+              ...projectScriptRuntimeEnv({
+                project: { cwd: project.value.workspaceRoot },
+                worktreePath,
+              }),
+              ...launchEnvironment,
+            },
+            ...(binding.startup._tag === "agent"
+              ? { agentLaunch: { providerInstanceId: binding.startup.providerInstanceId } }
+              : {}),
+          },
+        };
+      });
       const openTerminal = Effect.fn("ws.openTerminal")(function* (
         input: Parameters<TerminalManager.TerminalManager["Service"]["open"]>[0],
       ) {
+        const resolved = yield* resolveMainTerminalContext(input);
+        input = resolved.input;
         const launchIntent = input.agentLaunch;
         if (!launchIntent) {
-          return yield* terminalManager.open(input);
+          return yield* terminalManager.open(input, resolved.main);
         }
 
         const instance = yield* providerRegistry.getTerminalLaunchTarget(
@@ -550,77 +621,42 @@ const makeWsRpcLayer = (
               ),
             )
           : {};
-        const opened = yield* terminalManager.open({
-          ...input,
-          env: { ...input.env, ...launchEnvironment },
-        });
-
-        const recordLaunchResult = (result: NonNullable<typeof opened.agentLaunch>) =>
-          terminalManager
-            .recordAgentLaunch({
-              threadId: input.threadId,
-              terminalId: input.terminalId,
-              result,
-            })
-            .pipe(Effect.orElseSucceed(() => ({ ...opened, agentLaunch: result })));
-
-        if (!instance) {
-          return yield* recordLaunchResult({
-            providerInstanceId: launchIntent.providerInstanceId,
-            displayName: launchIntent.providerInstanceId,
-            status: "unavailable",
-            message: "The configured provider instance is unavailable.",
+        const openInput = { ...input, env: { ...input.env, ...launchEnvironment } };
+        const unavailable = (displayName: string, message: string) =>
+          terminalManager.openAgent(openInput, {
+            result: {
+              providerInstanceId: launchIntent.providerInstanceId,
+              displayName,
+              status: "unavailable",
+              message,
+            },
           });
-        }
+        if (!instance)
+          return yield* unavailable(
+            launchIntent.providerInstanceId,
+            "The configured provider instance is unavailable.",
+          );
         const displayName = launch?.displayName ?? instance.displayName ?? instance.driverKind;
-        if (!instance.enabled) {
-          return yield* recordLaunchResult({
-            providerInstanceId: launchIntent.providerInstanceId,
+        if (!instance.enabled)
+          return yield* unavailable(displayName, "The configured provider instance is disabled.");
+        if (!launch)
+          return yield* unavailable(
             displayName,
-            status: "unavailable",
-            message: "The configured provider instance is disabled.",
-          });
-        }
-        if (!launch) {
-          return yield* recordLaunchResult({
-            providerInstanceId: launchIntent.providerInstanceId,
-            displayName,
-            status: "unavailable",
-            message: "This provider does not support launching its CLI in a terminal.",
-          });
-        }
-
-        const commandAvailable = yield* isCommandAvailable(launch.command, {
-          env: { ...process.env, ...input.env, ...launchEnvironment },
-        });
-        if (!commandAvailable) {
-          return yield* recordLaunchResult({
-            providerInstanceId: launchIntent.providerInstanceId,
-            displayName,
-            status: "failed",
-            message: `Provider command ${launch.command} was not found.`,
-          });
-        }
-
-        return yield* terminalManager
-          .launchAgent({
+            "This provider does not support launching its CLI in a terminal.",
+          );
+        return yield* terminalManager.openAgent(openInput, {
+          launch: {
             threadId: input.threadId,
             terminalId: input.terminalId,
             providerInstanceId: launchIntent.providerInstanceId,
             displayName,
             command: launch.command,
             args: launch.args,
-          })
-          .pipe(
-            Effect.catch((error) =>
-              recordLaunchResult({
-                providerInstanceId: launchIntent.providerInstanceId,
-                displayName,
-                status: "failed",
-                message: error.message,
-              }),
-            ),
-          );
+          },
+          available: isCommandAvailable(launch.command, {
+            env: { ...process.env, ...input.env, ...launchEnvironment },
+          }),
+        });
       });
       const authorizeEffect = <A, E, R>(
         requiredScope: AuthEnvironmentScope,
@@ -969,6 +1005,7 @@ const makeWsRpcLayer = (
                     interactionMode: command.interactionMode,
                     branch: command.branch,
                     worktreePath: command.worktreePath,
+                    terminalWorkspace: command.terminalWorkspace,
                     createdAt: command.createdAt,
                   },
                   ...(command.prepareWorktree ? { prepareWorktree: command.prepareWorktree } : {}),
@@ -1129,6 +1166,7 @@ const makeWsRpcLayer = (
                 interactionMode: bootstrap.createThread.interactionMode,
                 branch: bootstrap.createThread.branch,
                 worktreePath: bootstrap.createThread.worktreePath,
+                terminalWorkspace: bootstrap.createThread.terminalWorkspace,
                 createdAt: bootstrap.createThread.createdAt,
               });
               createdThread = true;
@@ -2355,9 +2393,15 @@ const makeWsRpcLayer = (
             "rpc.aggregate": "terminal",
           }),
         [WS_METHODS.terminalRestart]: (input) =>
-          observeRpcEffect(WS_METHODS.terminalRestart, terminalManager.restart(input), {
-            "rpc.aggregate": "terminal",
-          }),
+          observeRpcEffect(
+            WS_METHODS.terminalRestart,
+            resolveMainTerminalContext(input).pipe(
+              Effect.flatMap((resolved) => terminalManager.restart(resolved.input)),
+            ),
+            {
+              "rpc.aggregate": "terminal",
+            },
+          ),
         [WS_METHODS.terminalClose]: (input) =>
           observeRpcEffect(WS_METHODS.terminalClose, terminalManager.close(input), {
             "rpc.aggregate": "terminal",

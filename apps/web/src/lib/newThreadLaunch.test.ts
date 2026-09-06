@@ -1,3 +1,5 @@
+import { waitForThreadShellReceipt } from "../state/threadShellReceipt";
+import type { OrchestrationShellSnapshot } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   EnvironmentId,
@@ -104,7 +106,7 @@ describe("coordinateTerminalFirstLaunch", () => {
       value: {
         materialize: vi.fn(async () => {
           calls.push("materialize");
-          return { _tag: "Success", value: undefined } as const;
+          return { _tag: "Success", value: { sequence: 12 } } as const;
         }),
         waitForThreadShell: vi.fn(async () => {
           calls.push("wait-shell");
@@ -141,8 +143,8 @@ describe("coordinateTerminalFirstLaunch", () => {
     expect(ops.calls).toEqual([
       "materialize",
       "wait-shell",
-      "navigate:remote-environment",
       "open-terminal",
+      "navigate:remote-environment",
       "activate",
     ]);
   });
@@ -224,7 +226,7 @@ describe("coordinateTerminalFirstLaunch", () => {
     const ops = operations({
       materialize: vi.fn(async () => {
         await gate;
-        return { _tag: "Success", value: undefined } as const;
+        return { _tag: "Success", value: { sequence: 12 } } as const;
       }),
     });
     const first = coordinateTerminalFirstLaunch({
@@ -240,6 +242,75 @@ describe("coordinateTerminalFirstLaunch", () => {
     expect(second).toBe(first);
     release?.();
     await Promise.all([first, second]);
+    expect(ops.value.materialize).toHaveBeenCalledOnce();
+  });
+  it("retries a failed receipt without materializing again and coalesces retry clicks", async () => {
+    const ops = operations();
+    ops.value.waitForThreadShell.mockRejectedValueOnce(new Error("stream failed"));
+    const result = await coordinateTerminalFirstLaunch({
+      threadRef: ref,
+      materializeInput: {},
+      operations: ops.value,
+    });
+    expect(ops.value.openTerminal).not.toHaveBeenCalled();
+    expect(ops.value.waitForThreadShell).toHaveBeenCalledWith(ref, 12, undefined);
+    if (result._tag !== "TerminalFailure") throw new Error("expected receipt failure");
+    await Promise.all([result.retry(), result.retry()]);
+    expect(ops.value.materialize).toHaveBeenCalledOnce();
+    expect(ops.value.openTerminal).toHaveBeenCalledOnce();
+  });
+
+  it("never opens at the project root when the worktree is missing", async () => {
+    const ops = operations({ waitForThreadShell: async () => ({ ...shell, worktreePath: null }) });
+    const result = await coordinateTerminalFirstLaunch({
+      threadRef: ref,
+      materializeInput: {},
+      requiresWorktree: true,
+      operations: ops.value,
+    });
+    expect(result._tag).toBe("TerminalFailure");
+    expect(ops.value.openTerminal).not.toHaveBeenCalled();
+  });
+  it("does not open from the initial root projection before the materialization receipt arrives", async () => {
+    let snapshot = {
+      snapshotSequence: 11,
+      threads: [{ ...shell, worktreePath: null }],
+      projects: [],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    } as OrchestrationShellSnapshot;
+    const listeners = new Set<() => void>();
+    let subscribed!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      subscribed = resolve;
+    });
+    const ops = operations({
+      waitForThreadShell: (threadRef: typeof ref, sequence: number) =>
+        waitForThreadShellReceipt({
+          ref: threadRef,
+          sequence,
+          read: () => ({ snapshot, error: null, removed: false }),
+          subscribe: (listener) => {
+            listeners.add(listener);
+            subscribed();
+            return () => {
+              listeners.delete(listener);
+            };
+          },
+        }),
+    });
+    const launched = coordinateTerminalFirstLaunch({
+      threadRef: ref,
+      materializeInput: {},
+      requiresWorktree: true,
+      operations: ops.value,
+    });
+    await ready;
+    expect(ops.value.openTerminal).not.toHaveBeenCalled();
+    snapshot = { ...snapshot, snapshotSequence: 13, threads: [shell] };
+    listeners.forEach((listener) => listener());
+    await launched;
+    expect(ops.value.openTerminal).toHaveBeenCalledOnce();
+    expect(ops.value.terminalInput).toHaveBeenCalledWith(shell);
     expect(ops.value.materialize).toHaveBeenCalledOnce();
   });
 });
