@@ -1,3 +1,6 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { useTerminalPreparationStore } from "../terminalPreparationStore";
+import { TerminalPreparation, WorkspaceLoading } from "../components/TerminalPreparation";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
@@ -35,6 +38,9 @@ function ChatThreadRouteView() {
   );
   const draftThread = useComposerDraftStore((store) =>
     threadRef ? store.getDraftThreadByRef(threadRef) : null,
+  );
+  const preparation = useTerminalPreparationStore((state) =>
+    threadRef ? state.byThread[scopedThreadKey(threadRef)] : undefined,
   );
   const environmentHasDraftThreads = useComposerDraftStore((store) => {
     if (!threadRef) {
@@ -80,14 +86,19 @@ function ChatThreadRouteView() {
 
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
-      {renderState === "ready" || (renderState === "loading" && serverThreadShell !== null) ? (
+      {draftThread?.launchView === "terminal" &&
+      (preparation || !serverThreadShell?.terminalWorkspace) ? (
+        <TerminalPreparation threadRef={threadRef} />
+      ) : serverThreadShell && (renderState === "ready" || renderState === "loading") ? (
         <ChatView
           environmentId={threadRef.environmentId}
           threadId={threadRef.threadId}
           routeKind="server"
           threadSyncPhase={threadSyncPhase}
         />
-      ) : null}
+      ) : (
+        <WorkspaceLoading />
+      )}
     </SidebarInset>
   );
 }

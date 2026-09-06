@@ -1,3 +1,4 @@
+import { WorkspaceLoading } from "../components/TerminalPreparation";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
@@ -81,7 +82,7 @@ function IndexDraftLanding() {
   }, [handleNewThread, mostRecentProject, startState.retryRequest]);
 
   if (!bootstrapped) {
-    return null;
+    return <WorkspaceLoading />;
   }
   if (mostRecentProject !== null) {
     return startState.failed ? (
@@ -93,7 +94,9 @@ function IndexDraftLanding() {
           }));
         }}
       />
-    ) : null;
+    ) : (
+      <WorkspaceLoading />
+    );
   }
   return <NoProjectsHero />;
 }

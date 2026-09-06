@@ -1,3 +1,4 @@
+import type { Atom } from "effect/unstable/reactivity";
 import { useAtomValue } from "@effect/atom-react";
 import {
   scopedProjectKey,
@@ -5,11 +6,11 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { resolveThreadLaunchPreference } from "@t3tools/client-runtime/thread-launch-preference";
-import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   DEFAULT_RUNTIME_MODE,
   type ModelSelection,
+  type ServerConfig,
   type ScopedProjectRef,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -41,14 +42,17 @@ import {
 } from "../state/entities";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
 import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
-import { primaryServerSettingsAtom } from "../state/server";
+import {
+  primaryServerConfigAtom,
+  serverEnvironment,
+  primaryServerSettingsAtom,
+} from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
 import { useAtomCommand } from "../state/use-atom-command";
 import { threadEnvironment } from "../state/threads";
 import { terminalEnvironment } from "../state/terminal";
-import { useEnvironments } from "../state/environments";
 import {
   deriveProviderInstanceEntries,
   NO_PROVIDER_MODEL_SELECTION,
@@ -61,6 +65,11 @@ import {
   coordinateTerminalFirstLaunch,
 } from "../lib/newThreadLaunch";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import {
+  beginTerminalPreparation,
+  failTerminalPreparation,
+  finishTerminalPreparation,
+} from "../terminalPreparationStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 
 interface NewThreadWorkspaceOptions {
@@ -108,6 +117,7 @@ function useDraftNewThreadHandler() {
     (
       projectRef: ScopedProjectRef,
       options?: NewThreadOptions,
+      beforeNavigate?: (draftId: DraftId) => void,
       // Which draft the thread ended up in, so a caller that has something to put in it — a
       // prepared checkout, a task to write — addresses that one rather than looking the project
       // up again and finding whichever draft it happens to hold.
@@ -123,6 +133,7 @@ function useDraftNewThreadHandler() {
         setLogicalProjectDraftThreadId,
         setModelSelection,
       } = useComposerDraftStore.getState();
+      const draftOriginLocation = router.state.location.href;
       const currentRouteTarget = getCurrentRouteTarget();
       // A new thread carries the user's *working mode* from the thread being
       // viewed: model (including options like reasoning effort and context
@@ -216,11 +227,12 @@ function useDraftNewThreadHandler() {
       const reusableStoredDraftThread =
         storedDraftThread !== null &&
         storedDraftThread.promotedTo == null &&
+        storedDraftThread.launchView !== "terminal" &&
         storedDraftThreadRef !== null &&
         readThreadShell(storedDraftThreadRef) === null
           ? storedDraftThread
           : null;
-      if (storedDraftThreadRef && reusableStoredDraftThread === null) {
+      if (storedDraftThreadRef && readThreadShell(storedDraftThreadRef) !== null) {
         markPromotedDraftThreadByRef(storedDraftThreadRef);
       }
       // New-thread surfaces (button, hotkeys, "/" landing, palette) only
@@ -326,6 +338,7 @@ function useDraftNewThreadHandler() {
             },
           );
           carryComposerContentTo(emptyStoredDraftThread.draftId);
+          beforeNavigate?.(emptyStoredDraftThread.draftId);
           const opened = {
             draftId: emptyStoredDraftThread.draftId,
             threadId: emptyStoredDraftThread.threadId,
@@ -340,6 +353,7 @@ function useDraftNewThreadHandler() {
           ) {
             return opened;
           }
+          if (router.state.location.href !== draftOriginLocation) return opened;
           await router.navigate({
             to: "/draft/$draftId",
             params: { draftId: emptyStoredDraftThread.draftId },
@@ -354,6 +368,7 @@ function useDraftNewThreadHandler() {
         currentRouteTarget?.kind === "draft" &&
         latestActiveDraftThread.logicalProjectKey === logicalProjectKey &&
         latestActiveDraftThread.promotedTo == null &&
+        latestActiveDraftThread.launchView !== "terminal" &&
         // Same content rule as above: a new-thread request while viewing an
         // invested draft mints a fresh one instead of repurposing it.
         !composerDraftHasUserContent(getComposerDraft(currentRouteTarget.draftId))
@@ -373,6 +388,7 @@ function useDraftNewThreadHandler() {
           interactionMode: latestActiveDraftThread.interactionMode,
           ...pickExplicitWorkspaceOptions(options),
         });
+        beforeNavigate?.(currentRouteTarget.draftId);
         return Promise.resolve({
           draftId: currentRouteTarget.draftId,
           threadId: latestActiveDraftThread.threadId,
@@ -396,6 +412,9 @@ function useDraftNewThreadHandler() {
           // to reuse is still mapped at this point — reusing it here would
           // silently undo mint-fresh semantics.
           racedDraft.draftId !== storedDraftThread?.draftId &&
+          !(options?.forceChat && racedDraft.launchView === "terminal") &&
+          racedDraft.environmentId === projectRef.environmentId &&
+          racedDraft.projectId === projectRef.projectId &&
           readThreadShell(scopeThreadRef(racedDraft.environmentId, racedDraft.threadId)) === null
         ) {
           // Same remap the reuse paths above perform: point the draft at the
@@ -414,6 +433,9 @@ function useDraftNewThreadHandler() {
             ...pickExplicitWorkspaceOptions(options),
           });
           carryComposerContentTo(racedDraft.draftId);
+          beforeNavigate?.(racedDraft.draftId);
+          if (router.state.location.href !== draftOriginLocation)
+            return { draftId: racedDraft.draftId, threadId: racedDraft.threadId };
           await router.navigate({
             to: "/draft/$draftId",
             params: { draftId: racedDraft.draftId },
@@ -446,7 +468,9 @@ function useDraftNewThreadHandler() {
           setModelSelection(draftId, carryModelSelection, { replaceOptions: true });
         }
         carryComposerContentTo(draftId);
+        beforeNavigate?.(draftId);
 
+        if (router.state.location.href !== draftOriginLocation) return { draftId, threadId };
         await router.navigate({
           to: "/draft/$draftId",
           params: { draftId },
@@ -459,6 +483,25 @@ function useDraftNewThreadHandler() {
   );
 }
 
+/** Read the resolved server configuration, never defaults from an absent connection. */
+function waitForLaunchConfig(atom: Atom.Atom<ServerConfig | null>): Promise<ServerConfig> {
+  const current = appAtomRegistry.get(atom);
+  if (current) return Promise.resolve(current);
+  return new Promise((resolve) => {
+    let unsubscribe = () => {};
+    unsubscribe = appAtomRegistry.subscribe(atom, (config) => {
+      if (!config) return;
+      unsubscribe();
+      resolve(config);
+    });
+    const config = appAtomRegistry.get(atom);
+    if (config) {
+      unsubscribe();
+      resolve(config);
+    }
+  });
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "An unexpected error occurred.";
 }
@@ -466,7 +509,6 @@ function errorMessage(error: unknown): string {
 /** Shared new-thread coordinator used by every web entry point. */
 export function useNewThreadHandler() {
   const openDraft = useDraftNewThreadHandler();
-  const { environments } = useEnvironments();
   const materializeThread = useAtomCommand(threadEnvironment.materialize, {
     reportFailure: false,
   });
@@ -475,16 +517,14 @@ export function useNewThreadHandler() {
 
   return useCallback(
     async (projectRef: ScopedProjectRef, options?: NewThreadOptions) => {
-      const openedDraft = await openDraft(projectRef, options);
-      if (!openedDraft) return null;
-      if (options?.forceChat) return openedDraft;
-
+      const originLocation = router.state.location.href;
       const project = await waitForProject(projectRef);
-      const primaryServerSettings = appAtomRegistry.get(primaryServerSettingsAtom);
+      const configAtom = serverEnvironment.configValueAtom(projectRef.environmentId);
+      const config = await waitForLaunchConfig(configAtom);
+      const primaryConfig = await waitForLaunchConfig(primaryServerConfigAtom);
+      const primaryServerSettings = primaryConfig.settings;
 
-      const providers =
-        environments.find((environment) => environment.environmentId === projectRef.environmentId)
-          ?.serverConfig?.providers ?? [];
+      const providers = config.providers;
       const launchPreference = resolveThreadLaunchPreference({
         application: {
           defaultThreadView: primaryServerSettings.defaultThreadView,
@@ -496,11 +536,9 @@ export function useNewThreadHandler() {
           (entry) => entry.instanceId,
         ),
       });
-      if (launchPreference.view === "chat") return openedDraft;
-      const supportsSessions =
-        environments.find((entry) => entry.environmentId === projectRef.environmentId)?.serverConfig
-          ?.environment.capabilities.terminalWorkspaceSessions === true;
-      if (!supportsSessions) {
+
+      const supportsSessions = config.environment.capabilities.terminalWorkspaceSessions === true;
+      if (!options?.forceChat && launchPreference.view === "terminal" && !supportsSessions) {
         toastManager.add(
           stackedThreadToast({
             type: "warning",
@@ -509,8 +547,28 @@ export function useNewThreadHandler() {
               "Update this environment to create terminal workspace sessions. You can still use this chat thread.",
           }),
         );
-        return openedDraft;
       }
+      const selectedView = options?.forceChat || !supportsSessions ? "chat" : launchPreference.view;
+      // A delayed preference lookup must not take over a different route.
+      if (router.state.location.href !== originLocation) return null;
+      const openedDraft = await openDraft(projectRef, options, (draftId) => {
+        const store = useComposerDraftStore.getState();
+        const draft = store.getDraftSession(draftId);
+        if (!draft) return;
+        const launchView =
+          draft.launchView ??
+          (composerDraftHasUserContent(store.getComposerDraft(draftId)) ? "chat" : selectedView);
+        store.setDraftThreadContext(draftId, { launchView });
+        if (launchView === "terminal") {
+          beginTerminalPreparation(scopeThreadRef(draft.environmentId, draft.threadId));
+        }
+      });
+      if (!openedDraft) return null;
+      if (
+        useComposerDraftStore.getState().getDraftSession(openedDraft.draftId)?.launchView !==
+        "terminal"
+      )
+        return openedDraft;
       if (launchPreference.fallback?._tag === "provider-unavailable") {
         toastManager.add(
           stackedThreadToast({
@@ -553,8 +611,14 @@ export function useNewThreadHandler() {
         randomHex,
       });
 
-      const creationLocation = router.state.location.href;
+      const controller = new AbortController();
+      const stopWatchingDraft = useComposerDraftStore.subscribe((store) => {
+        if (store.getDraftSession(openedDraft.draftId)?.threadId !== threadRef.threadId) {
+          controller.abort();
+        }
+      });
       const result = await coordinateTerminalFirstLaunch({
+        signal: controller.signal,
         threadRef,
         materializeInput: {
           ...materializeInput,
@@ -566,6 +630,12 @@ export function useNewThreadHandler() {
         requiresWorktree: materializeInput.prepareWorktree !== undefined,
         operations: {
           materialize: async (input) => {
+            if (
+              useComposerDraftStore.getState().getDraftSession(openedDraft.draftId)?.threadId !==
+              threadRef.threadId
+            ) {
+              throw new Error("Terminal preparation was cancelled.");
+            }
             const commandResult = await materializeThread({
               environmentId: threadRef.environmentId,
               input,
@@ -576,8 +646,10 @@ export function useNewThreadHandler() {
           },
           waitForThreadShell,
           navigateToThread: async (materializedThreadRef) => {
+            finishTerminalPreparation(materializedThreadRef);
             markPromotedDraftThreadByRef(materializedThreadRef);
-            if (router.state.location.href !== creationLocation) return;
+            const target = resolveThreadRouteTarget(router.state.matches.at(-1)?.params ?? {});
+            if (!(target?.kind === "draft" && target.draftId === openedDraft.draftId)) return;
             await router.navigate({
               to: "/$environmentId/$threadId",
               params: {
@@ -588,6 +660,12 @@ export function useNewThreadHandler() {
             });
           },
           terminalInput: (thread) => {
+            if (
+              useComposerDraftStore.getState().getDraftSession(openedDraft.draftId)?.threadId !==
+              threadRef.threadId
+            ) {
+              throw new Error("Terminal preparation was cancelled.");
+            }
             const worktreePath = thread.worktreePath ?? null;
             const binding = thread.terminalWorkspace;
             if (!binding)
@@ -626,24 +704,11 @@ export function useNewThreadHandler() {
             panel.openTerminal(threadRef, DEFAULT_THREAD_TERMINAL_ID);
             panel.setPanelFirst(threadRef, true);
           },
-          restoreChatWorkspace: () => {
-            useRightPanelStore.getState().restoreSplit(threadRef);
-          },
         },
-      });
+      }).finally(stopWatchingDraft);
 
       if (result._tag === "MaterializeFailure") {
-        if (wasBootstrapThreadDeleted(result.error)) {
-          const failedDraft = draftStore.getDraftSession(openedDraft.draftId);
-          if (failedDraft?.threadId === openedDraft.threadId) {
-            draftStore.setLogicalProjectDraftThreadId(
-              failedDraft.logicalProjectKey,
-              scopeProjectRef(failedDraft.environmentId, failedDraft.projectId),
-              openedDraft.draftId,
-              { threadId: newThreadId(), createdAt: new Date().toISOString() },
-            );
-          }
-        }
+        failTerminalPreparation(threadRef, errorMessage(result.error));
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -654,7 +719,15 @@ export function useNewThreadHandler() {
         return openedDraft;
       }
       if (result._tag === "TerminalFailure") {
-        const retry = result.retry;
+        const retry = async () => {
+          beginTerminalPreparation(threadRef);
+          const retried = await result.retry();
+          if (retried._tag === "Failure") {
+            failTerminalPreparation(threadRef, errorMessage(retried.error), retry);
+          }
+          return retried;
+        };
+        failTerminalPreparation(threadRef, errorMessage(result.error), retry);
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -758,7 +831,7 @@ export function useNewThreadHandler() {
       }
       return openedDraft;
     },
-    [environments, materializeThread, openDraft, openTerminal, router],
+    [materializeThread, openDraft, openTerminal, router],
   );
 }
 

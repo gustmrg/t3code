@@ -125,7 +125,6 @@ describe("coordinateTerminalFirstLaunch", () => {
           return { _tag: "Success", value: terminal } as const;
         }),
         activateTerminalWorkspace: vi.fn(() => calls.push("activate")),
-        restoreChatWorkspace: vi.fn(() => calls.push("restore-chat")),
         ...overrides,
       },
     };
@@ -162,7 +161,7 @@ describe("coordinateTerminalFirstLaunch", () => {
     expect(ops.value.navigateToThread).not.toHaveBeenCalled();
   });
 
-  it("restores chat on terminal failure and exposes a working retry", async () => {
+  it("keeps the terminal experience on failure and exposes a working retry", async () => {
     let attempts = 0;
     const ops = operations({
       openTerminal: async (): Promise<LaunchStepResult<TerminalSessionSnapshot>> => {
@@ -178,10 +177,11 @@ describe("coordinateTerminalFirstLaunch", () => {
       operations: ops.value,
     });
     expect(result._tag).toBe("TerminalFailure");
-    expect(ops.value.restoreChatWorkspace).toHaveBeenCalledOnce();
+    expect(ops.value.navigateToThread).not.toHaveBeenCalled();
     if (result._tag !== "TerminalFailure") throw new Error("expected terminal failure");
     await expect(result.retry()).resolves.toEqual({ _tag: "Success", value: terminal });
     expect(ops.value.activateTerminalWorkspace).toHaveBeenCalledOnce();
+    expect(ops.value.materialize).toHaveBeenCalledOnce();
   });
 
   it("returns provider launch metadata and an agent-only retry without rematerializing", async () => {

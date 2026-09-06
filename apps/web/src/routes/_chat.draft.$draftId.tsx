@@ -1,3 +1,6 @@
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { TerminalPreparation } from "../components/TerminalPreparation";
+import { useTerminalPreparationStore } from "../terminalPreparationStore";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import ChatView from "../components/ChatView";
@@ -21,6 +24,14 @@ function DraftChatThreadRouteView() {
   const { draftId: rawDraftId } = Route.useParams();
   const draftId = DraftId.make(rawDraftId);
   const draftSession = useComposerDraftStore((store) => store.getDraftSession(draftId));
+  const terminalDraft = draftSession?.launchView === "terminal";
+  const preparation = useTerminalPreparationStore((state) =>
+    draftSession
+      ? state.byThread[
+          scopedThreadKey(scopeThreadRef(draftSession.environmentId, draftSession.threadId))
+        ]
+      : undefined,
+  );
   const threadRefs = useThreadRefs();
   const inferredThreadRef = draftSession
     ? (threadRefs.find(
@@ -35,24 +46,25 @@ function DraftChatThreadRouteView() {
   const backgroundSubmissionPending = useBackgroundDraftSubmissionPending(serverThreadRef);
   const canonicalThreadRef = resolveDraftPromotionNavigationTarget({
     serverThreadRef,
-    serverThreadStarted,
+    serverThreadStarted:
+      serverThreadStarted || (terminalDraft && !!serverThread?.terminalWorkspace),
     backgroundSubmissionPending,
   });
 
   useEffect(() => {
-    if (!inferredThreadRef || draftSession?.promotedTo) {
+    if (terminalDraft || !inferredThreadRef || draftSession?.promotedTo) {
       return;
     }
     markPromotedDraftThreadByRef(inferredThreadRef);
-  }, [draftSession?.promotedTo, inferredThreadRef]);
+  }, [draftSession?.promotedTo, inferredThreadRef, terminalDraft]);
 
   useEffect(() => {
-    if (!canonicalThreadRef) {
+    if (!canonicalThreadRef || (terminalDraft && preparation)) {
       return;
     }
 
     let cancelled = false;
-    void waitForDraftHeroTransition().then(() => {
+    void (terminalDraft ? Promise.resolve() : waitForDraftHeroTransition()).then(() => {
       if (cancelled) {
         return;
       }
@@ -66,7 +78,7 @@ function DraftChatThreadRouteView() {
     return () => {
       cancelled = true;
     };
-  }, [canonicalThreadRef, navigate]);
+  }, [canonicalThreadRef, navigate, terminalDraft, preparation]);
 
   useEffect(() => {
     if (draftSession || canonicalThreadRef) {
@@ -81,13 +93,19 @@ function DraftChatThreadRouteView() {
 
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
-      <ChatView
-        draftId={draftId}
-        environmentId={draftSession.environmentId}
-        threadId={draftSession.threadId}
-        routeKind="draft"
-        forceExpandedMobileComposer
-      />
+      {terminalDraft ? (
+        <TerminalPreparation
+          threadRef={scopeThreadRef(draftSession.environmentId, draftSession.threadId)}
+        />
+      ) : (
+        <ChatView
+          draftId={draftId}
+          environmentId={draftSession.environmentId}
+          threadId={draftSession.threadId}
+          routeKind="draft"
+          forceExpandedMobileComposer
+        />
+      )}
     </SidebarInset>
   );
 }

@@ -82,7 +82,6 @@ export interface TerminalFirstLaunchOperations<MaterializeInput> {
   ) => Promise<LaunchStepResult<TerminalSessionSnapshot>>;
   readonly terminalInput: (thread: OrchestrationThreadShell) => TerminalOpenInput;
   readonly activateTerminalWorkspace: () => void;
-  readonly restoreChatWorkspace: () => void;
 }
 
 const inFlightTerminalLaunches = new Map<string, Promise<TerminalFirstLaunchResult>>();
@@ -147,7 +146,6 @@ export function coordinateTerminalFirstLaunch<MaterializeInput>(input: {
     };
     const opened = await activateTerminal();
     if (opened._tag === "Failure") {
-      input.operations.restoreChatWorkspace();
       return { _tag: "TerminalFailure", error: opened.error, retry: activateTerminal };
     }
     return { _tag: "Success", terminal: opened.value, retryAgent: openTerminal };

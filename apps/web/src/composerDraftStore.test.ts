@@ -1897,3 +1897,40 @@ describe("createDebouncedStorage", () => {
     expect(base.setItem).toHaveBeenCalledWith("key", "v2");
   });
 });
+
+describe("draft launch intent", () => {
+  beforeEach(resetComposerDraftStore);
+
+  it("preserves terminal intent and context across remapping and promotion", () => {
+    const store = useComposerDraftStore.getState();
+    const ref = scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("terminal-project"));
+    const draftId = DraftId.make("terminal-draft");
+    const threadId = ThreadId.make("terminal-thread");
+    store.setLogicalProjectDraftThreadId("logical-terminal", ref, draftId, {
+      threadId,
+      branch: "feature",
+      launchView: "terminal",
+    });
+    store.setDraftThreadContext(draftId, { worktreePath: "/worktree" });
+    store.setLogicalProjectDraftThreadId("logical-terminal", ref, DraftId.make("other-draft"));
+    expect(store.getDraftSession(draftId)).toMatchObject({
+      launchView: "terminal",
+      branch: "feature",
+      worktreePath: "/worktree",
+    });
+    store.markDraftThreadPromoting(draftId, scopeThreadRef(ref.environmentId, threadId));
+    expect(store.getDraftSession(draftId)?.launchView).toBe("terminal");
+  });
+
+  it("records intent without changing composer content or model options", () => {
+    const store = useComposerDraftStore.getState();
+    const draftId = DraftId.make("chat-draft");
+    const ref = scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("chat-project"));
+    store.setProjectDraftThreadId(ref, draftId);
+    store.setPrompt(draftId, "keep this prompt");
+    const composer = store.getComposerDraft(draftId);
+    store.setDraftThreadContext(draftId, { launchView: "chat" });
+    expect(store.getComposerDraft(draftId)).toBe(composer);
+    expect(store.getDraftSession(draftId)?.launchView).toBe("chat");
+  });
+});

@@ -217,6 +217,7 @@ const PersistedDraftThreadState = Schema.Struct({
   worktreePath: Schema.NullOr(Schema.String),
   envMode: DraftThreadEnvModeSchema,
   startFromOrigin: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  launchView: Schema.optionalKey(Schema.Literals(["chat", "terminal"])),
   promotedTo: Schema.optionalKey(
     Schema.NullOr(
       Schema.Struct({
@@ -321,6 +322,8 @@ export interface DraftSessionState {
   worktreePath: string | null;
   envMode: DraftThreadEnvMode;
   startFromOrigin: boolean;
+  /** Resolved creation intent; persisted server bindings take over after promotion. */
+  launchView?: "chat" | "terminal";
   promotedTo?: ScopedThreadRef | null;
 }
 
@@ -386,6 +389,7 @@ interface ComposerDraftStoreState {
       startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
+      launchView?: "chat" | "terminal";
     },
   ) => void;
   /** Creates or updates the draft session tracked for a concrete project ref. */
@@ -401,6 +405,7 @@ interface ComposerDraftStoreState {
       startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
+      launchView?: "chat" | "terminal";
     },
   ) => void;
   /** Updates mutable draft-session metadata without touching composer content. */
@@ -415,6 +420,7 @@ interface ComposerDraftStoreState {
       startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
+      launchView?: "chat" | "terminal";
     },
   ) => void;
   clearProjectDraftThreadId: (projectRef: ScopedProjectRef) => void;
@@ -1374,6 +1380,7 @@ function createDraftThreadState(
     startFromOrigin?: boolean;
     runtimeMode?: RuntimeMode;
     interactionMode?: ProviderInteractionMode;
+    launchView?: "chat" | "terminal";
   },
 ): DraftThreadState {
   // A project change (including switching environments within a logical
@@ -1400,6 +1407,7 @@ function createDraftThreadState(
     options?.startFromOrigin === undefined
       ? (existingThread?.startFromOrigin ?? false)
       : options.startFromOrigin;
+  const launchView = options?.launchView ?? existingThread?.launchView;
   return {
     threadId,
     environmentId: projectRef.environmentId,
@@ -1414,6 +1422,7 @@ function createDraftThreadState(
     envMode:
       options?.envMode ?? (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local")),
     startFromOrigin: nextStartFromOrigin,
+    ...(launchView ? { launchView } : {}),
     promotedTo: null,
   };
 }
@@ -1446,6 +1455,7 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.worktreePath === right.worktreePath &&
     left.envMode === right.envMode &&
     left.startFromOrigin === right.startFromOrigin &&
+    left.launchView === right.launchView &&
     scopedThreadRefsEqual(left.promotedTo, right.promotedTo)
   );
 }
@@ -1589,6 +1599,10 @@ function normalizePersistedDraftThreads(
         worktreePath: normalizedWorktreePath,
         envMode: normalizeDraftThreadEnvMode(candidateDraftThread.envMode, normalizedWorktreePath),
         startFromOrigin,
+        ...(candidateDraftThread.launchView === "terminal" ||
+        candidateDraftThread.launchView === "chat"
+          ? { launchView: candidateDraftThread.launchView }
+          : {}),
         promotedTo,
       };
     }
@@ -1868,7 +1882,7 @@ function partializeComposerDraftStoreState(
   state: ComposerDraftStoreState,
 ): PersistedComposerDraftStoreState {
   // Draft sessions worth persisting: mapped (a new-thread flow targets
-  // them), promoting (mid-send), or holding real user content (they back a
+  // them), preparing a terminal, promoting (mid-send), or holding real user content (they back a
   // sidebar row). Everything else is a zombie — and its composer blob must
   // be dropped WITH it, or model/mode-only entries would persist forever
   // keyed to a session that no longer exists.
@@ -1881,6 +1895,7 @@ function partializeComposerDraftStoreState(
         ([threadKey, draftThread]) =>
           mappedDraftKeys.has(threadKey) ||
           isDraftThreadPromoting(draftThread) ||
+          draftThread.launchView === "terminal" ||
           composerDraftHasUserContent(state.draftsByThreadKey[threadKey]),
       )
       .map(([threadKey]) => threadKey),
@@ -2238,6 +2253,7 @@ function toHydratedDraftThreadState(
     worktreePath: persistedDraftThread.worktreePath,
     envMode: persistedDraftThread.envMode,
     startFromOrigin: persistedDraftThread.startFromOrigin,
+    ...(persistedDraftThread.launchView ? { launchView: persistedDraftThread.launchView } : {}),
     promotedTo: persistedDraftThread.promotedTo
       ? scopeThreadRef(
           persistedDraftThread.promotedTo.environmentId as EnvironmentId,
@@ -2380,7 +2396,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             // never invested content in it. A draft with typed text or
             // attachments stays alive unmapped — the sidebar draft rows list
             // every such session, so "new thread" can mint a fresh draft
-            // without destroying the one the user walked away from.
+            // without destroying the one the user walked away from. Terminal
+            // drafts likewise own pending work or recovery even without a prompt.
             if (
               previousThreadKeyForLogicalProject &&
               previousThreadKeyForLogicalProject !== draftId &&
@@ -2389,6 +2406,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 previousThreadKeyForLogicalProject,
               ) &&
               !isDraftThreadPromoting(previousDraftThread) &&
+              previousDraftThread?.launchView !== "terminal" &&
               !composerDraftHasUserContent(
                 state.draftsByThreadKey[previousThreadKeyForLogicalProject],
               )
@@ -2457,6 +2475,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               options.startFromOrigin === undefined
                 ? existing.startFromOrigin
                 : options.startFromOrigin;
+            const launchView = options.launchView ?? existing.launchView;
             const nextDraftThread: DraftThreadState = {
               threadId: existing.threadId,
               environmentId: nextProjectRef.environmentId,
@@ -2473,6 +2492,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               envMode:
                 options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? "local")),
               startFromOrigin: nextStartFromOrigin,
+              ...(launchView ? { launchView } : {}),
               promotedTo: existing.promotedTo ?? null,
             };
             const isUnchanged =
@@ -2486,6 +2506,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nextDraftThread.worktreePath === existing.worktreePath &&
               nextDraftThread.envMode === existing.envMode &&
               nextDraftThread.startFromOrigin === existing.startFromOrigin &&
+              nextDraftThread.launchView === existing.launchView &&
               scopedThreadRefsEqual(nextDraftThread.promotedTo, existing.promotedTo);
             if (isUnchanged) {
               return state;
