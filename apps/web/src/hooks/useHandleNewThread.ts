@@ -58,7 +58,6 @@ import {
   NO_PROVIDER_MODEL_SELECTION,
   resolveDefaultProviderModelSelection,
 } from "../providerInstances";
-import { useRightPanelStore } from "../rightPanelStore";
 import { DEFAULT_THREAD_TERMINAL_ID } from "../types";
 import {
   buildTerminalMaterializeInput,
@@ -699,11 +698,7 @@ export function useNewThreadHandler() {
               ? { _tag: "Failure", error: squashAtomCommandFailure(terminalResult) }
               : { _tag: "Success", value: terminalResult.value };
           },
-          activateTerminalWorkspace: () => {
-            const panel = useRightPanelStore.getState();
-            panel.openTerminal(threadRef, DEFAULT_THREAD_TERMINAL_ID);
-            panel.setPanelFirst(threadRef, true);
-          },
+          activateTerminalWorkspace: () => {},
         },
       }).finally(stopWatchingDraft);
 

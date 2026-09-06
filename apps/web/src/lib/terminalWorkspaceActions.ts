@@ -14,10 +14,8 @@ export function isMainTerminalSurface(
 export function focusMainTerminal(input: {
   ref: ScopedThreadRef;
   binding: TerminalWorkspaceBinding;
-  ensure: (ref: ScopedThreadRef, terminalId: string, activate: boolean) => void;
   focus: () => void;
 }): void {
-  input.ensure(input.ref, input.binding.mainTerminalId, true);
   input.focus();
 }
 
@@ -42,8 +40,8 @@ export function moveAuxiliaryTerminalsToDrawer(input: {
   removeSurface: (surface: RightPanelSurface) => void;
 }): void {
   for (const surface of input.surfaces) {
-    if (surface.kind !== "terminal" || isMainTerminalSurface(surface, input.binding)) continue;
-    surface.terminalIds.forEach(input.move);
+    if (surface.kind !== "terminal") continue;
+    surface.terminalIds.filter((id) => id !== input.binding.mainTerminalId).forEach(input.move);
     input.removeSurface(surface);
   }
 }

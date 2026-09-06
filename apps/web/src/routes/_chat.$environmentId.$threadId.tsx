@@ -4,7 +4,7 @@ import { TerminalPreparation, WorkspaceLoading } from "../components/TerminalPre
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
-import ChatView from "../components/ChatView";
+import { ThreadWorkspace } from "../components/ThreadWorkspace";
 import { threadHasStarted } from "../components/ChatView.logic";
 import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../composerDraftStore";
 import { resolveThreadRouteRef, resolveThreadRouteRenderState } from "../threadRoutes";
@@ -90,7 +90,7 @@ function ChatThreadRouteView() {
       (preparation || !serverThreadShell?.terminalWorkspace) ? (
         <TerminalPreparation threadRef={threadRef} />
       ) : serverThreadShell && (renderState === "ready" || renderState === "loading") ? (
-        <ChatView
+        <ThreadWorkspace
           environmentId={threadRef.environmentId}
           threadId={threadRef.threadId}
           routeKind="server"

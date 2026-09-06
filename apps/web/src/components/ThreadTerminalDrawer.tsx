@@ -333,7 +333,7 @@ interface TerminalViewportProps {
   focusRequestId: number;
   autoFocus: boolean;
   resizeEpoch: number;
-  drawerHeight: number;
+  drawerHeight?: number;
   keybindings: ResolvedKeybindingsConfig;
 }
 
@@ -358,7 +358,7 @@ export function TerminalViewport({
   focusRequestId,
   autoFocus,
   resizeEpoch,
-  drawerHeight,
+  drawerHeight = 0,
   keybindings,
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
