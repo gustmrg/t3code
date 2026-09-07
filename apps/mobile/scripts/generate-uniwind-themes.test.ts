@@ -26,6 +26,8 @@ describe("generate mobile Uniwind themes", () => {
 
   it("registers every custom palette for both appearances", () => {
     expect(customThemeNames).toEqual([
+      "gusty-code-light",
+      "gusty-code-dark",
       "t3-chat-light",
       "t3-chat-dark",
       "grove-light",
@@ -48,8 +50,8 @@ describe("generate mobile Uniwind themes", () => {
     const css = NodeFS.readFileSync(NodePath.resolve(import.meta.dirname, "../global.css"), "utf8");
     const variables = readDefaultThemeVariables(css);
 
-    expect(variables.light["--color-screen"]).toBe("#f2f2f7");
-    expect(variables.dark["--color-screen"]).toBe("#0a0a0a");
+    expect(variables.light["--color-screen"]).toBe("#f8fafc");
+    expect(variables.dark["--color-screen"]).toBe("#0b1020");
     expect(Object.keys(variables.light)).toEqual(Object.keys(variables.dark));
   });
 });

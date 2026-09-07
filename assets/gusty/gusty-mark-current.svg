@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Gusty Code current monochrome mark"><defs></defs>  <g transform="translate(19.5 10) scale(.606)">
+    <path id="arm-west" fill="currentColor" d="M475 48 C322 8 152 88 75 227 C6 352 44 493 147 543 C227 581 314 568 373 522 C270 543 184 462 181 359 C177 229 311 91 475 48Z"/>
+    <path id="arm-north" fill="currentColor" d="M734 462 C745 338 657 201 552 162 C449 116 351 148 285 204 C217 258 198 367 249 446 C235 351 309 280 407 263 C546 236 672 323 734 462Z"/>
+    <path id="arm-east" fill="currentColor" d="M349 769 C488 790 622 704 659 577 C692 465 638 372 572 329 C510 286 424 280 360 315 C462 309 537 396 548 483 C567 623 469 738 349 769Z"/>
+    <path id="arm-south" fill="currentColor" d="M48 531 C74 642 163 710 285 703 C404 696 487 625 500 535 C510 481 498 441 469 403 C486 513 402 578 310 599 C217 623 110 589 48 531Z"/>
+  </g></svg>

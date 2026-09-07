@@ -1,3 +1,9 @@
+import { GUSTY_CODE_THEME, GUSTY_CODE_THEME_ID } from "@t3tools/shared/gustyTheme";
+export {
+  GUSTY_CODE_THEME,
+  GUSTY_CODE_THEME_ID,
+  GUSTY_CODE_THEME_LABEL,
+} from "@t3tools/shared/gustyTheme";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import "culori/css";
@@ -299,7 +305,8 @@ export function subscribeToCustomThemes(listener: () => void): () => void {
 // genuinely T3-branded palette keeps it. Stored preferences and mixes with the
 // old ids stay readable through this alias table.
 const LEGACY_THEME_ID_ALIASES: Readonly<Record<string, string>> = {
-  [LEGACY_T3_CHAT_DARK_THEME_ID]: T3_CHAT_THEME_ID,
+  "t3-chat": GUSTY_CODE_THEME_ID,
+  [LEGACY_T3_CHAT_DARK_THEME_ID]: GUSTY_CODE_THEME_ID,
   "t3-grove": GROVE_THEME_ID,
   "t3-ocean": OCEAN_THEME_ID,
   "t3-ember": EMBER_THEME_ID,
@@ -1247,7 +1254,7 @@ export function createManagedThemeColors(
 
 /** Theme-file defaults follow the flagship palette for the requested mode. */
 export function getDefaultThemeColors(appearance: ThemeAppearance): ThemeColors {
-  return appearance === "dark" ? T3_CHAT_THEME.variants!.dark! : T3_CHAT_THEME.colors;
+  return appearance === "dark" ? GUSTY_CODE_THEME.variants!.dark! : GUSTY_CODE_THEME.colors;
 }
 
 /**

@@ -22,7 +22,7 @@ import {
   type ThemeAppearance,
   type ThemeDefinition,
   type ThemeHalves,
-  T3_CHAT_THEME,
+  GUSTY_CODE_THEME,
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
@@ -53,8 +53,9 @@ import {
 } from "./ThemePreviewCircles";
 import { ThemeWireframe } from "./ThemeWireframe";
 
-const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
-  T3_CHAT_THEME,
+const LIBRARY_THEMES: ReadonlyArray<ThemeDefinition | null> = [
+  GUSTY_CODE_THEME,
+  null, // The original T3 Code theme follows Gusty Code.
   GROVE_THEME,
   OCEAN_THEME,
   EMBER_THEME,
@@ -779,25 +780,27 @@ export function ThemeLibrary({
         className="mx-auto grid w-full max-w-[56rem] gap-2 px-3 sm:px-4"
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 16rem), 1fr))" }}
       >
-        {STANDARD_THEME_CARDS.map((standardTheme) => (
-          <ThemeLibraryCard
-            activeModes={pickedModesFor(null)}
-            isActive={false}
-            key={standardTheme.id}
-            onDuplicate={() =>
-              openThemeEditor({
-                editingThemeId: null,
-                seedThemeId: null,
-                seedName: `${standardTheme.label} copy`,
-                initialAppearance,
-              })
-            }
-            onUse={() => persistTheme(appearanceMode === "system" ? "system" : appearanceMode)}
-            onUseMode={handlePairPick(null)}
-            theme={standardTheme}
-          />
-        ))}
-        {MAINTAINER_THEMES.map((maintainerTheme) => {
+        {LIBRARY_THEMES.map((maintainerTheme) => {
+          if (maintainerTheme === null) {
+            return STANDARD_THEME_CARDS.map((standardTheme) => (
+              <ThemeLibraryCard
+                activeModes={pickedModesFor(null)}
+                isActive={false}
+                key={standardTheme.id}
+                onDuplicate={() =>
+                  openThemeEditor({
+                    editingThemeId: null,
+                    seedThemeId: null,
+                    seedName: `${standardTheme.label} copy`,
+                    initialAppearance,
+                  })
+                }
+                onUse={() => persistTheme(appearanceMode === "system" ? "system" : appearanceMode)}
+                onUseMode={handlePairPick(null)}
+                theme={standardTheme}
+              />
+            ));
+          }
           const card = getThemeCardDefinition(maintainerTheme);
           return (
             <ThemeLibraryCard
@@ -889,7 +892,7 @@ export function ThemeLibrary({
   return (
     <div className="space-y-3">
       <p className="px-3 text-[13px] leading-[1.45] text-muted-foreground/80 sm:px-4">
-        Choose how T3 Code looks. Use a built-in theme or make your own.
+        Choose how Gusty Code looks. Use a built-in theme or make your own.
       </p>
       <h3 className="px-3 text-sm font-medium tracking-[-0.005em] text-foreground sm:px-4">
         Color scheme

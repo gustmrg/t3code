@@ -1,32 +1,48 @@
 import type { ColorValue } from "react-native";
-import Svg, { Path } from "react-native-svg";
 import { withUniwind } from "uniwind";
+import Svg, { G, Path } from "react-native-svg";
 
 const ThemedPath = withUniwind(Path);
 
-/**
- * The "T3" brand mark, matching the desktop sidebar's T3Wordmark SVG
- * (apps/web Sidebar.tsx). Width derives from the viewBox aspect ratio.
- */
+/** Canonical Gusty mark, rendered in the surrounding navigation color. */
 export function T3Wordmark(props: {
   readonly height: number;
   readonly color?: ColorValue;
   readonly colorClassName?: string;
 }) {
-  const aspectRatio = 94.3941 / 56.96;
   return (
     <Svg
-      accessibilityLabel="T3"
+      accessibilityLabel="Gusty Code"
       height={props.height}
-      width={props.height * aspectRatio}
-      viewBox="15.5309 37 94.3941 56.96"
+      width={props.height}
+      viewBox="0 0 512 512"
     >
-      <ThemedPath
-        d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z"
-        color={props.color}
-        colorClassName={props.colorClassName}
-        fill="currentColor"
-      />
+      <G transform="translate(19.5 10) scale(.606)">
+        <ThemedPath
+          color={props.color}
+          colorClassName={props.colorClassName}
+          fill="currentColor"
+          d="M475 48 C322 8 152 88 75 227 C6 352 44 493 147 543 C227 581 314 568 373 522 C270 543 184 462 181 359 C177 229 311 91 475 48Z"
+        />
+        <ThemedPath
+          color={props.color}
+          colorClassName={props.colorClassName}
+          fill="currentColor"
+          d="M734 462 C745 338 657 201 552 162 C449 116 351 148 285 204 C217 258 198 367 249 446 C235 351 309 280 407 263 C546 236 672 323 734 462Z"
+        />
+        <ThemedPath
+          color={props.color}
+          colorClassName={props.colorClassName}
+          fill="currentColor"
+          d="M349 769 C488 790 622 704 659 577 C692 465 638 372 572 329 C510 286 424 280 360 315 C462 309 537 396 548 483 C567 623 469 738 349 769Z"
+        />
+        <ThemedPath
+          color={props.color}
+          colorClassName={props.colorClassName}
+          fill="currentColor"
+          d="M48 531 C74 642 163 710 285 703 C404 696 487 625 500 535 C510 481 498 441 469 403 C486 513 402 578 310 599 C217 623 110 589 48 531Z"
+        />
+      </G>
     </Svg>
   );
 }

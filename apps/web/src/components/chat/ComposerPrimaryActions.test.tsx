@@ -225,15 +225,15 @@ describe("ComposerPrimaryActions", () => {
     expect(renderStandaloneStop()).not.toContain("sm:size-7");
   });
 
-  it("renders stage artwork inside the send button when artwork identification is active", () => {
+  it("keeps flat send-button styling even with a saved artwork preference", () => {
     stageArtworkState.mode = "artwork";
     stageArtworkState.variant = "nightly";
 
     const markup = renderSendButton();
 
-    expect(markup).toContain("stage-nightly");
-    expect(markup).toContain("bg-transparent text-white");
-    expect(markup).not.toContain("bg-message-action text-message-action-foreground");
+    expect(markup).not.toContain("stage-nightly");
+    expect(markup).not.toContain("bg-transparent text-white");
+    expect(markup).toContain("bg-message-action");
   });
 
   it("keeps the normal send-button fill when artwork identification is inactive", () => {
@@ -242,7 +242,8 @@ describe("ComposerPrimaryActions", () => {
     const markup = renderSendButton();
 
     expect(markup).not.toContain("stage-nightly");
-    expect(markup).toContain("bg-message-action text-message-action-foreground");
+    expect(markup).toContain("bg-message-action");
+    expect(markup).toContain("text-message-action-foreground");
   });
 
   it("only renders stop while running when Enter-to-send is available", () => {

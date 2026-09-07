@@ -26,6 +26,9 @@ describe("button geometry tokens", () => {
     );
 
     expect(html).toContain("size-7");
+    expect(html).toContain("gap-0");
+    expect(html).toContain("p-0");
+    expect(html).toContain("[&amp;_svg]:mx-0");
     expect(html).toContain("sm:size-6");
   });
 
