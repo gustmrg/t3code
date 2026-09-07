@@ -425,7 +425,7 @@ function SnoozePopoverButton(props: {
         >
           <ClockIcon className="size-3" />
         </TooltipTrigger>
-        <TooltipPopup>Snooze thread</TooltipPopup>
+        <TooltipPopup>Snooze thread until later</TooltipPopup>
       </Tooltip>
       <PopoverPopup side="bottom" align="end" className="w-56" viewportClassName="p-1">
         {presets.map((preset) => (
@@ -1335,17 +1335,24 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               </span>
               {variantAction === "unsnooze" ? (
                 !props.snoozeSupported ? null : (
-                  <button
-                    type="button"
-                    aria-label="Wake thread now"
-                    onClick={handleUnsnoozeClick}
-                    className={cn(
-                      "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                      isWoke && "group-hover/sidebar-row:static",
-                    )}
-                  >
-                    <AlarmClockOffIcon className="mb-px size-3" />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          aria-label="Wake thread now"
+                          onClick={handleUnsnoozeClick}
+                          className={cn(
+                            "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
+                            isWoke && "group-hover/sidebar-row:static",
+                          )}
+                        />
+                      }
+                    >
+                      <AlarmClockOffIcon className="mb-px size-3" />
+                    </TooltipTrigger>
+                    <TooltipPopup side="top">Wake thread now</TooltipPopup>
+                  </Tooltip>
                 )
               ) : !props.settlementSupported ? null : variantAction === "unsettle" ? (
                 <Tooltip>
@@ -1364,20 +1371,27 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   >
                     <Undo2Icon className="mb-px size-3.5" />
                   </TooltipTrigger>
-                  <TooltipPopup side="top">Un-settle thread</TooltipPopup>
+                  <TooltipPopup side="top">Move thread back to active</TooltipPopup>
                 </Tooltip>
               ) : (
-                <button
-                  type="button"
-                  aria-label="Settle thread"
-                  onClick={handleSettleClick}
-                  className={cn(
-                    "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
-                    isWoke && "group-hover/sidebar-row:static",
-                  )}
-                >
-                  <CheckIcon className="size-3" />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-label="Settle thread"
+                        onClick={handleSettleClick}
+                        className={cn(
+                          "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
+                          isWoke && "group-hover/sidebar-row:static",
+                        )}
+                      />
+                    }
+                  >
+                    <CheckIcon className="size-3" />
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">Move thread to Settled</TooltipPopup>
+                </Tooltip>
               )}
             </span>
             {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}
@@ -1546,7 +1560,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           <CheckIcon className="size-3.5" />
                           Settle
                         </TooltipTrigger>
-                        <TooltipPopup>Settle thread</TooltipPopup>
+                        <TooltipPopup>Move thread to Settled</TooltipPopup>
                       </Tooltip>
                     ) : null}
                   </span>

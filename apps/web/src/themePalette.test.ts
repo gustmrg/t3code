@@ -27,6 +27,7 @@ import {
   subscribeToCustomThemes,
   themeAllowsSidebarArtwork,
   T3_CHAT_THEME,
+  GUSTY_CODE_THEME,
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
@@ -213,7 +214,7 @@ describe("theme files", () => {
       colors: {
         canvas: canonical("#07152f"),
         accent: canonical("#67c2ff"),
-        placeholder: canonical("#968d9f"),
+        placeholder: getDefaultThemeColors("dark").placeholder,
       },
     });
   });
@@ -435,11 +436,11 @@ describe("theme files", () => {
   });
 
   it("includes the dual-mode maintainer themes", () => {
-    for (const theme of [T3_CHAT_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
+    for (const theme of [GUSTY_CODE_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
       expect(getThemeDefinition(theme.id)).toBe(theme);
       expect(getThemeModes(theme)).toEqual(["light", "dark"]);
-      expect(theme.sidebarArtwork).toBe(true);
-      expect(themeAllowsSidebarArtwork(theme.id)).toBe(true);
+      expect(theme.sidebarArtwork === true).toBe(theme !== GUSTY_CODE_THEME);
+      expect(themeAllowsSidebarArtwork(theme.id)).toBe(theme !== GUSTY_CODE_THEME);
       expect(theme.colors.accent).toMatch(/^oklch\(/);
       expect(theme.variants?.dark?.accent).toMatch(/^oklch\(/);
 
@@ -448,7 +449,7 @@ describe("theme files", () => {
         expect(colors).not.toBeNull();
         expect(contrastRatio(colors!.text, colors!.canvas)).toBeGreaterThanOrEqual(4.5);
         expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeGreaterThanOrEqual(4.5);
-        if (theme !== T3_CHAT_THEME) {
+        if (theme !== GUSTY_CODE_THEME) {
           expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeLessThan(5.5);
           expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeCloseTo(
             mode === "dark" ? 5.082 : 4.705,
@@ -997,8 +998,8 @@ describe("stored theme preferences", () => {
     }
   });
 
-  it("resolves the legacy t3-chat-dark preference to dark T3 Chat", () => {
-    expect(getThemeDefinition("t3-chat-dark")).toBe(T3_CHAT_THEME);
+  it("resolves the legacy t3-chat-dark preference to dark Gusty Code", () => {
+    expect(getThemeDefinition("t3-chat-dark")).toBe(GUSTY_CODE_THEME);
     expect(getThemePreferenceMode("t3-chat-dark")).toBe("dark");
     expect(resolveThemeAppearance("t3-chat-dark", true, false)).toBe("dark");
     expect(resolveDesktopTheme("t3-chat-dark", false)).toBe("dark");

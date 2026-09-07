@@ -66,9 +66,9 @@ describe("mobile themes", () => {
     }
   });
 
-  it("preserves the existing mobile palette as the default", () => {
-    expect(readDefaultMobileThemeVariables("light")["--color-screen"]).toBe("#f2f2f7");
-    expect(readDefaultMobileThemeVariables("dark")["--color-screen"]).toBe("#0a0a0a");
+  it("uses the Gusty mobile palette as the default", () => {
+    expect(readDefaultMobileThemeVariables("light")["--color-screen"]).toBe("#f8fafc");
+    expect(readDefaultMobileThemeVariables("dark")["--color-screen"]).toBe("#0b1020");
     expect(readDefaultMobileThemeVariables("light")["--color-user-bubble-skill-foreground"]).toBe(
       "#f0abfc",
     );

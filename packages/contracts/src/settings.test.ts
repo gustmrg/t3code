@@ -13,6 +13,7 @@ import {
   ServerSettingsPatch,
 } from "./settings.ts";
 
+const encodeClientSettings = Schema.encodeSync(ClientSettingsSchema);
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
@@ -99,10 +100,12 @@ describe("ClientSettings appearance contrast", () => {
 });
 
 describe("ClientSettings environment identification", () => {
-  it("defaults to artwork and accepts each presentation mode", () => {
-    expect(decodeClientSettings({}).environmentIdentificationMode).toBe("artwork");
+  it("defaults to pill and accepts each presentation mode", () => {
+    expect(decodeClientSettings({}).environmentIdentificationMode).toBe("pill");
 
     for (const mode of ["artwork", "pill", "none"] as const) {
+      const settings = decodeClientSettings({ environmentIdentificationMode: mode });
+      expect(encodeClientSettings(settings).environmentIdentificationMode).toBe(mode);
       expect(
         decodeClientSettingsPatch({ environmentIdentificationMode: mode })
           .environmentIdentificationMode,

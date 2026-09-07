@@ -36,33 +36,33 @@
         // app colors before React mounts.
         const DEFAULT_THEME_PALETTES = {
           light: {
-            background: "oklch(0.982446 0.010114 325.653)",
-            foreground: "oklch(0.325698 0.116116 325.037)",
-            accent: "oklch(0.591646 0.217985 0.584)",
-            chrome: "oklch(0.982446 0.010114 325.653)",
+            background: "oklch(0.984152 0.003413 247.858)",
+            foreground: "oklch(0.177334 0.034113 269.559)",
+            accent: "oklch(0.54615 0.215208 262.881)",
+            chrome: "oklch(0.984152 0.003413 247.858)",
           },
           dark: {
-            background: "oklch(0.22813 0.020366 307.469)",
-            foreground: "oklch(0.980735 0.004092 301.426)",
-            accent: "oklch(0.460685 0.185347 4.099)",
-            chrome: "oklch(0.22813 0.020366 307.469)",
+            background: "oklch(0.177334 0.034113 269.559)",
+            foreground: "oklch(0.927582 0.005814 264.531)",
+            accent: "oklch(0.54615 0.215208 262.881)",
+            chrome: "oklch(0.177334 0.034113 269.559)",
           },
         };
         // Keep this small boot-time copy in sync with the built-in palettes so
         // the selected theme is visible before the app has mounted.
         const BUILT_IN_THEME_PALETTES = {
-          "t3-chat": {
+          "gusty-code": {
             light: {
-              background: "oklch(0.982446 0.010114 325.653)",
-              foreground: "oklch(0.325698 0.116116 325.037)",
-              accent: "oklch(0.591646 0.217985 0.584)",
-              chrome: "oklch(0.982446 0.010114 325.653)",
+              background: "oklch(0.984152 0.003413 247.858)",
+              foreground: "oklch(0.177334 0.034113 269.559)",
+              accent: "oklch(0.54615 0.215208 262.881)",
+              chrome: "oklch(0.984152 0.003413 247.858)",
             },
             dark: {
-              background: "oklch(0.22813 0.020366 307.469)",
-              foreground: "oklch(0.980735 0.004092 301.426)",
-              accent: "oklch(0.460685 0.185347 4.099)",
-              chrome: "oklch(0.22813 0.020366 307.469)",
+              background: "oklch(0.177334 0.034113 269.559)",
+              foreground: "oklch(0.927582 0.005814 264.531)",
+              accent: "oklch(0.54615 0.215208 262.881)",
+              chrome: "oklch(0.177334 0.034113 269.559)",
             },
           },
           grove: {
@@ -123,7 +123,7 @@
           },
         };
         // Keep the built-in mode list in sync with the runtime so the selected
-        // T3 Chat palette is visible before React has mounted.
+        // Gusty Code palette is visible before React has mounted.
         const BUILT_IN_THEME_MODES = Object.fromEntries(
           Object.entries(BUILT_IN_THEME_PALETTES).map(([id, palettes]) => [
             id,
@@ -134,6 +134,7 @@
           "system",
           "light",
           "dark",
+          "gusty-code",
           "t3-chat",
           "grove",
           "ocean",
@@ -223,7 +224,8 @@
           // and every maintainer theme under a t3- prefix; keep those
           // preferences readable. Mirrors the runtime's legacy alias table.
           const LEGACY_THEME_IDS = {
-            "t3-chat-dark": "t3-chat",
+            "t3-chat-dark": "gusty-code",
+            "t3-chat": "gusty-code",
             "t3-grove": "grove",
             "t3-ocean": "ocean",
             "t3-ember": "ember",
@@ -453,13 +455,13 @@
         object-fit: contain;
       }
     </style>
-    <title>T3 Code (Alpha)</title>
+    <title>Gusty Code (Alpha)</title>
   </head>
   <body>
     <div id="root">
       <div id="boot-shell">
-        <div id="boot-shell-card" aria-label="T3 Code splash screen">
-          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Code" />
+        <div id="boot-shell-card" aria-label="Gusty Code splash screen">
+          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="Gusty Code" />
         </div>
       </div>
     </div>

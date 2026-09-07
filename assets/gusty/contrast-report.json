@@ -1,0 +1,251 @@
+{
+  "method": "WCAG sRGB relative luminance; thresholds evaluated before rounding.",
+  "checks": [
+    {
+      "theme": "dark",
+      "foreground": "text",
+      "background": "background",
+      "hex": ["#E5E7EB", "#0B1020"],
+      "ratio": 15.2917,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "text",
+      "background": "surface",
+      "hex": ["#E5E7EB", "#111A2E"],
+      "ratio": 14.0058,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "muted",
+      "background": "background",
+      "hex": ["#94A3B8", "#0B1020"],
+      "ratio": 7.3839,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "muted",
+      "background": "surface",
+      "hex": ["#94A3B8", "#111A2E"],
+      "ratio": 6.7629,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "link",
+      "background": "background",
+      "hex": ["#60A5FA", "#0B1020"],
+      "ratio": 7.4466,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "link",
+      "background": "surface",
+      "hex": ["#60A5FA", "#111A2E"],
+      "ratio": 6.8204,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "success",
+      "background": "background",
+      "hex": ["#06B6D4", "#0B1020"],
+      "ratio": 7.798,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "success",
+      "background": "surface",
+      "hex": ["#06B6D4", "#111A2E"],
+      "ratio": 7.1423,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "onAction",
+      "background": "action",
+      "hex": ["#FFFFFF", "#2563EB"],
+      "ratio": 5.1686,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "onAction",
+      "background": "actionHover",
+      "hex": ["#FFFFFF", "#1D4ED8"],
+      "ratio": 6.7016,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "focus",
+      "background": "background",
+      "hex": ["#06B6D4", "#0B1020"],
+      "ratio": 7.798,
+      "threshold": 3,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "focus",
+      "background": "surface",
+      "hex": ["#06B6D4", "#111A2E"],
+      "ratio": 7.1423,
+      "threshold": 3,
+      "passes": true
+    },
+    {
+      "theme": "dark",
+      "foreground": "borderControl",
+      "background": "surface",
+      "hex": ["#64748B", "#111A2E"],
+      "ratio": 3.6438,
+      "threshold": 3,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "text",
+      "background": "background",
+      "hex": ["#0B1020", "#F8FAFC"],
+      "ratio": 18.0951,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "text",
+      "background": "surface",
+      "hex": ["#0B1020", "#FFFFFF"],
+      "ratio": 18.9325,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "muted",
+      "background": "background",
+      "hex": ["#475569", "#F8FAFC"],
+      "ratio": 7.2425,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "muted",
+      "background": "surface",
+      "hex": ["#475569", "#FFFFFF"],
+      "ratio": 7.5777,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "link",
+      "background": "background",
+      "hex": ["#1D4ED8", "#F8FAFC"],
+      "ratio": 6.4052,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "link",
+      "background": "surface",
+      "hex": ["#1D4ED8", "#FFFFFF"],
+      "ratio": 6.7016,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "success",
+      "background": "background",
+      "hex": ["#0E7490", "#F8FAFC"],
+      "ratio": 5.1208,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "success",
+      "background": "surface",
+      "hex": ["#0E7490", "#FFFFFF"],
+      "ratio": 5.3578,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "onAction",
+      "background": "action",
+      "hex": ["#FFFFFF", "#2563EB"],
+      "ratio": 5.1686,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "onAction",
+      "background": "actionHover",
+      "hex": ["#FFFFFF", "#1D4ED8"],
+      "ratio": 6.7016,
+      "threshold": 4.5,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "focus",
+      "background": "background",
+      "hex": ["#2563EB", "#F8FAFC"],
+      "ratio": 4.94,
+      "threshold": 3,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "focus",
+      "background": "surface",
+      "hex": ["#2563EB", "#FFFFFF"],
+      "ratio": 5.1686,
+      "threshold": 3,
+      "passes": true
+    },
+    {
+      "theme": "light",
+      "foreground": "borderControl",
+      "background": "surface",
+      "hex": ["#64748B", "#FFFFFF"],
+      "ratio": 4.7588,
+      "threshold": 3,
+      "passes": true
+    }
+  ],
+  "avoidForNormalText": [
+    {
+      "pair": "Brand Blue on Midnight",
+      "ratio": 3.663,
+      "use": "Not normal text; use the dark-theme link token."
+    },
+    {
+      "pair": "Mist on Blue",
+      "ratio": 4.1746,
+      "use": "Not normal button labels; use white."
+    }
+  ]
+}

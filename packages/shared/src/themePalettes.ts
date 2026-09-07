@@ -1,4 +1,13 @@
-export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
+import { GUSTY_CODE_THEME } from "./gustyTheme.ts";
+
+export const BUILT_IN_THEME_IDS = [
+  "gusty-code",
+  "t3-chat",
+  "grove",
+  "ocean",
+  "ember",
+  "iris",
+] as const;
 
 /** The mobile app's own hand-tuned palette, which is not part of the built-in library. */
 export const MOBILE_DEFAULT_THEME_ID = "t3-code";
@@ -757,6 +766,7 @@ export const IRIS_THEME: ThemeDefinition = {
 };
 
 export const BUILT_IN_THEMES: ReadonlyArray<ThemeDefinition> = [
+  GUSTY_CODE_THEME,
   T3_CHAT_THEME,
   GROVE_THEME,
   OCEAN_THEME,

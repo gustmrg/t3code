@@ -22,6 +22,7 @@
  * binaries. That keeps the assertions focused on registry routing
  * behaviour rather than the runtime details of each provider.
  */
+import { BUILT_IN_DRIVERS } from "../builtInDrivers.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -317,6 +318,36 @@ describe("ProviderInstanceRegistryLive — all drivers slice", () => {
     Layer.provideMerge(TestHttpClientLive),
     Layer.provideMerge(Layer.succeed(ProviderEventLoggers, NoOpProviderEventLoggers)),
     Layer.provideMerge(ModelManifest.layerTest),
+  );
+
+  it.live("keeps a saved Kimi instance unavailable while built-in providers boot", () =>
+    Effect.gen(function* () {
+      const codexId = ProviderInstanceId.make("codex");
+      const kimiId = ProviderInstanceId.make("kimi");
+      const configMap: ProviderInstanceConfigMap = {
+        [codexId]: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: false,
+          config: makeCodexConfig({}),
+        },
+        [kimiId]: {
+          driver: ProviderDriverKind.make("kimi"),
+          enabled: true,
+          config: { binaryPath: "/missing/kimi" },
+        },
+      };
+      const { registry } = yield* makeProviderInstanceRegistry({
+        drivers: BUILT_IN_DRIVERS,
+        configMap,
+      });
+
+      expect((yield* registry.listInstances).map((instance) => instance.instanceId)).toEqual([
+        codexId,
+      ]);
+      expect(yield* registry.listUnavailable).toMatchObject([
+        { instanceId: kimiId, driver: "kimi", availability: "unavailable" },
+      ]);
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.live("boots one instance of every shipped driver from a single config map", () =>

@@ -675,6 +675,7 @@ function useMarkdownStyles(
       },
       heading: {
         fontFamily: boldFontFamily,
+        fontWeight: "700",
         color: markdownStrongColor,
         marginTop: 18,
         marginBottom: 8,
