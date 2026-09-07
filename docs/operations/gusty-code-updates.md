@@ -69,4 +69,49 @@ pacote npm oficial pode voltar a servir a UI oficial. Manter cliente e servidor
 compatíveis, inclusive em ambientes remotos. Mobile possui distribuição própria.
 
 Uma automação futura pode preparar a branch e executar os testes. Publicar
-somente depois da validação. Este documento não configura publicação automática.
+somente depois da validação. O workflow desktop descrito abaixo publica somente por tag ou solicitação manual.
+
+## Releases desktop pelo GitHub Actions
+
+O workflow `Gusty Desktop Release` gera macOS Apple Silicon (`arm64`), macOS
+Intel (`x64`) e Linux `x64`. Não inclui Windows nem distribuição mobile.
+O workflow oficial `Release` fica restrito ao repositório upstream.
+
+Usar uma sequência SemVer própria: por exemplo, começar em `0.1.0`, publicar
+uma correção Gusty como `0.1.1` e continuar incrementando a versão mesmo quando
+a base T3 não mudar. Antes da primeira publicação, conferir a versão dos builds
+já instalados: a versão nova deve ser maior. Não usar `+gusty.N` para ordenar
+atualizações, pois metadados não alteram precedência SemVer; `-gusty.N` é uma
+pré-release. As notas registram a versão dos pacotes upstream e o commit exato
+do fork. Registrar a tag/commit upstream integrado na descrição da integração.
+
+Depois de integrar o workflow na `main`:
+
+1. Em Actions → Gusty Desktop Release → Run workflow, escolher a referência
+   validada e informar a versão. Deixar `publish` desmarcado para obter apenas
+   artifacts de teste (retidos por 14 dias).
+2. Testar os instaladores nas três plataformas. A validação local do YAML não
+   substitui o primeiro build nos runners do GitHub.
+3. Executar novamente com `publish` marcado, ou enviar uma tag `v0.1.0` no
+   commit validado. Tags estáveis `v*.*.*` iniciam build e publicação.
+4. Os três builds precisam terminar antes da publicação. O workflow combina os
+   manifests macOS, cria um draft, envia os arquivos e só então torna a release
+   pública. Não sobrescreve releases existentes. Se falhar após criar um draft,
+   inspecionar e remover somente esse draft incompleto antes de tentar novamente.
+
+Nunca publicar uma versão inferior à última release Gusty. Não reutilizar tags
+upstream já presentes no fork. Uma tag existente só pode apontar para o mesmo
+commit que está sendo construído. O workflow não faz merge, não altera a `main`
+e não publica npm ou serviços na nuvem. O `GITHUB_TOKEN` recebe escrita apenas
+no job de publicação; não é necessário PAT.
+
+Durante o build, as versões de desktop, web, servidor e contratos são alinhadas
+à versão Gusty no checkout temporário. Essas alterações não são commitadas.
+Usar o servidor correspondente ao build Gusty para evitar divergência de versão
+com servidores oficiais remotos.
+
+Os builds macOS iniciais não são assinados nem notarizados. A instalação é manual
+e pode exigir autorização nas configurações de segurança do macOS. A atualização
+automática macOS exige configurar assinatura Apple antes de ser utilizada. Linux
+recebe AppImage e seu manifest de atualização. O destino do atualizador é
+explicitamente `gustmrg/t3code`.

@@ -1,0 +1,197 @@
+name: Gusty Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "!v*-*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Gusty version (for example 0.1.0)"
+        required: true
+        type: string
+      publish:
+        description: "Publish the completed build as a GitHub release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gusty-desktop-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'gustmrg/t3code'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      upstream_version: ${{ steps.meta.outputs.upstream_version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: meta
+        name: Validate stable version and tag
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${REQUESTED_VERSION:-${GITHUB_REF_NAME}}"
+          version="${version#v}"
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+            echo 'Use a stable numeric version such as 0.1.0.' >&2; exit 1;
+          }
+          if git rev-parse --verify "refs/tags/v$version" >/dev/null 2>&1; then
+            [[ "$(git rev-list -n 1 "v$version")" == "$(git rev-parse HEAD)" ]] || {
+              echo 'This version tag belongs to a different commit.' >&2; exit 1;
+            }
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "upstream_version=$(jq -r .version apps/desktop/package.json)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: mac
+            arch: arm64
+            target: dmg
+            rust_target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            platform: mac
+            arch: x64
+            target: dmg
+            rust_target: x86_64-apple-darwin
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+            target: AppImage
+            rust_target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+      T3CODE_DESKTOP_SIGNED: "false"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/desktop...
+              - --filter=t3...
+              - --filter=@t3tools/scripts...
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+      - name: Install Linux packaging tools
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+      - name: Ensure Electron runtime
+        run: vp run --filter @t3tools/desktop ensure:electron
+      - name: Build unsigned desktop artifacts
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          node scripts/update-release-package-versions.ts "$VERSION"
+          node scripts/build-desktop-artifact.ts --platform "$PLATFORM" --target "$TARGET" --arch "$ARCH" --build-version "$VERSION" --output-dir release --verbose
+      - name: Collect installers and update manifests
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release-publish
+          shopt -s nullglob
+          for file in release/*.dmg release/*.zip release/*.AppImage release/*.blockmap; do
+            cp "$file" release-publish/
+          done
+          if [[ "$PLATFORM" == mac ]]; then
+            test -n "$(find release-publish -name '*.dmg' -print -quit)"
+            test -n "$(find release-publish -name '*.zip' -print -quit)"
+            cp release/latest-mac.yml "release-publish/latest-mac-$ARCH.yml"
+          else
+            test -n "$(find release-publish -name '*.AppImage' -print -quit)"
+            cp release/latest-linux.yml release-publish/
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gusty-desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release-publish/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [prepare, build]
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: gusty-desktop-*
+          path: release-assets
+          merge-multiple: true
+      - name: Merge macOS update manifests
+        run: |
+          node scripts/merge-update-manifests.ts --platform mac release-assets/latest-mac-arm64.yml release-assets/latest-mac-x64.yml release-assets/latest-mac.yml
+          rm release-assets/latest-mac-arm64.yml release-assets/latest-mac-x64.yml
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          UPSTREAM_VERSION: ${{ needs.prepare.outputs.upstream_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          # Never overwrite an existing release, including a draft from a failed run.
+          gh release list --limit 1000 --json tagName > "$RUNNER_TEMP/releases.json"
+          if jq -e --arg tag "$tag" 'any(.[]; .tagName == $tag)' "$RUNNER_TEMP/releases.json" >/dev/null; then
+            echo 'Release already exists. Inspect/delete an incomplete draft before retrying.' >&2
+            exit 1
+          fi
+          latest=$(jq -r '.[].tagName | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))' "$RUNNER_TEMP/releases.json" | sed 's/^v//' | sort -V | tail -n 1)
+          if [[ -n "$latest" && "$(printf '%s\n' "$latest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]]; then
+            echo 'The release version must exceed existing stable versions.' >&2
+            exit 1
+          fi
+          cat > "$RUNNER_TEMP/notes.md" <<NOTES
+          Gusty Code $VERSION
+
+          - macOS Apple Silicon and Intel: unsigned DMG and ZIP builds.
+          - Linux x64: AppImage.
+          - Upstream package version: $UPSTREAM_VERSION.
+          - Fork source commit: $GITHUB_SHA.
+
+          macOS builds require manual installation until Apple signing is configured.
+          NOTES
+          gh release create "$tag" --target "$GITHUB_SHA" --draft --title "Gusty Code $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+          gh release upload "$tag" release-assets/*
+          gh release edit "$tag" --draft=false --latest
