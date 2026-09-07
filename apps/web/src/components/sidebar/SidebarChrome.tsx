@@ -1,6 +1,6 @@
 import { ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import { memo, useCallback } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 
 import { cn } from "../../lib/utils";
 import {
@@ -36,9 +36,8 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       )}
     >
       <SidebarTrigger className="relative z-10 md:hidden" />
-      <SidebarBrand />
       <Badge
-        className="relative z-10 ml-1 rounded-full px-1.5 text-muted-foreground"
+        className="relative z-10 ml-1 md:ml-[var(--workspace-titlebar-content-left)] rounded-full px-1.5 text-muted-foreground"
         data-environment-identification="pill"
         size="sm"
         variant="secondary"
@@ -48,28 +47,6 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     </SidebarHeader>
   );
 });
-
-function SidebarBrand() {
-  return (
-    <Link
-      aria-label="Go to threads"
-      className={cn(
-        "sidebar-brand relative z-10 ml-[var(--workspace-titlebar-content-left)] h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2",
-        "text-foreground",
-      )}
-      to="/"
-    >
-      <T3Wordmark />
-      <span className={cn("truncate text-sm font-medium tracking-tight", "text-muted-foreground")}>
-        Gusty Code
-      </span>
-    </Link>
-  );
-}
-
-function T3Wordmark() {
-  return <img src="/brand/gusty-mark.svg" alt="Gusty Code" className="size-6 shrink-0" />;
-}
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const navigate = useNavigate();

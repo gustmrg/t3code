@@ -71,17 +71,17 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     settingsSchema: GrokSettings,
   },
   {
+    value: ProviderDriverKind.make("opencode"),
+    label: "OpenCode",
+    icon: OpenCodeIcon,
+    settingsSchema: OpenCodeSettings,
+  },
+  {
     value: ProviderDriverKind.make("kimi"),
     label: "Kimi Code",
     icon: KimiIcon,
     badgeLabel: "Early Access",
     settingsSchema: KimiSettings,
-  },
-  {
-    value: ProviderDriverKind.make("opencode"),
-    label: "OpenCode",
-    icon: OpenCodeIcon,
-    settingsSchema: OpenCodeSettings,
   },
 ];
 

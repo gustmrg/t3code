@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind } from "@t3tools/contracts";
 
-import { DRIVER_OPTION_BY_VALUE } from "./providerDriverMeta";
+import { DRIVER_OPTION_BY_VALUE, DRIVER_OPTIONS } from "./providerDriverMeta";
 import { KimiIcon } from "../Icons";
 import {
   deriveProviderSettingsFields,
@@ -11,6 +11,13 @@ import {
 } from "./ProviderSettingsForm";
 
 describe("ProviderSettingsForm helpers", () => {
+  it("places Kimi Code last, immediately after OpenCode", () => {
+    expect(DRIVER_OPTIONS.slice(-2).map((option) => option.value)).toEqual([
+      ProviderDriverKind.make("opencode"),
+      ProviderDriverKind.make("kimi"),
+    ]);
+  });
+
   it("exposes Kimi Code once with its generated binary field and Early Access metadata", () => {
     const kimi = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("kimi")];
     expect(kimi).toBeDefined();

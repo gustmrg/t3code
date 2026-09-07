@@ -46,8 +46,9 @@ import {
 } from "./ThemePreviewCircles";
 import { ThemeWireframe } from "./ThemeWireframe";
 
-const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
+const LIBRARY_THEMES: ReadonlyArray<ThemeDefinition | null> = [
   GUSTY_CODE_THEME,
+  null, // The original T3 Code theme follows Gusty Code.
   GROVE_THEME,
   OCEAN_THEME,
   EMBER_THEME,
@@ -470,17 +471,19 @@ export function ThemeLibrary({
         className="mx-auto grid w-full max-w-[56rem] gap-2 px-3 sm:px-4"
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 17rem), 1fr))" }}
       >
-        {STANDARD_THEME_CARDS.map((standardTheme) => (
-          <ThemeLibraryCard
-            activeModes={pickedModesFor(null)}
-            isActive={false}
-            key={standardTheme.id}
-            onUse={() => persistTheme(appearanceMode === "system" ? "system" : appearanceMode)}
-            onUseMode={handlePairPick(null)}
-            theme={standardTheme}
-          />
-        ))}
-        {MAINTAINER_THEMES.map((maintainerTheme) => {
+        {LIBRARY_THEMES.map((maintainerTheme) => {
+          if (maintainerTheme === null) {
+            return STANDARD_THEME_CARDS.map((standardTheme) => (
+              <ThemeLibraryCard
+                activeModes={pickedModesFor(null)}
+                isActive={false}
+                key={standardTheme.id}
+                onUse={() => persistTheme(appearanceMode === "system" ? "system" : appearanceMode)}
+                onUseMode={handlePairPick(null)}
+                theme={standardTheme}
+              />
+            ));
+          }
           const card = getThemeCardDefinition(maintainerTheme);
           return (
             <ThemeLibraryCard
