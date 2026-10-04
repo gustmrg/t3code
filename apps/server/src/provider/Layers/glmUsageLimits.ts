@@ -99,7 +99,7 @@ export function glmQuotaToLimits(
       {
         id: `glm_${kind}`,
         kind,
-        label: kind === "session" ? "5 hours" : kind === "weekly" ? "Weekly" : "Monthly tools",
+        label: kind === "session" ? "Session" : kind === "weekly" ? "Weekly" : "Monthly tools",
         usedPercent: clampPercent(usedPercent),
         ...(kind === "session"
           ? { windowDurationMins: 300 }

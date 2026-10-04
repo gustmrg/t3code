@@ -13,6 +13,24 @@ type ProviderIconProps = {
   readonly size?: number;
 };
 
+/** Z.AI's official mark: https://z-cdn.chatglm.cn/z-ai/static/logo.svg */
+export function ZaiIcon({ size = 16 }: { readonly size?: number }) {
+  return (
+    <Svg accessibilityLabel="Z.AI" width={size} height={size} viewBox="0 0 30 30" fill="none">
+      <Path
+        d="M24.51 28.51H5.49c-2.21 0-4-1.79-4-4V5.49c0-2.21 1.79-4 4-4h19.03c2.21 0 4 1.79 4 4v19.03c-.01 2.2-1.8 3.99-4.01 3.99Z"
+        fill="#2D2D2D"
+        stroke="#FFFFFF"
+        strokeWidth={0.6317}
+      />
+      <Path
+        d="m15.47 7.1-1.3 1.85c-.2.29-.54.47-.9.47h-7.1V7.09c-.01.01 9.3.01 9.3.01Zm8.83 0L13.14 22.91H5.7L16.86 7.1Zm-9.77 15.81 1.31-1.86c.2-.29.54-.47.9-.47h7.09v2.33Z"
+        fill="#FFFFFF"
+      />
+    </Svg>
+  );
+}
+
 function AcpRegistryFallbackIcon(props: { readonly color: string; readonly size: number }) {
   return (
     <Svg width={props.size} height={props.size} viewBox="0 0 576 220" fill="none">

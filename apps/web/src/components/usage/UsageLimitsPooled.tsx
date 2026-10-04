@@ -24,7 +24,7 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { getDriverOption } from "../settings/providerDriverMeta";
 import { RedactedSensitiveText } from "../settings/RedactedSensitiveText";
 import { Button } from "../ui/button";
-import { OpenAI } from "../Icons";
+import { OpenAI, ZaiIcon } from "../Icons";
 import { Alert, AlertTitle } from "../ui/alert";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
@@ -76,6 +76,9 @@ function AccountAvatar({
   readonly account: LimitAccount;
   readonly className?: string;
 }) {
+  if (account.limits.service === "GLM Coding Plan") {
+    return <ZaiIcon aria-label="Z.AI" className={cn("size-5 shrink-0", className)} />;
+  }
   if (account.redeem) {
     return (
       <ProviderInstanceIcon
@@ -554,13 +557,17 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
   return (
     <section className="flex flex-col gap-3">
       <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <ProviderInstanceIcon
-          driverKind={pool.driver}
-          displayName={label}
-          indicatorBackground="var(--background)"
-          className="size-5"
-          iconClassName="size-4 text-foreground/80"
-        />
+        {pool.label === "GLM Coding Plan" ? (
+          <ZaiIcon aria-label="Z.AI" className="size-5 shrink-0" />
+        ) : (
+          <ProviderInstanceIcon
+            driverKind={pool.driver}
+            displayName={label}
+            indicatorBackground="var(--background)"
+            className="size-5"
+            iconClassName="size-4 text-foreground/80"
+          />
+        )}
         {label}
       </h2>
       {windows.map((window) => {
