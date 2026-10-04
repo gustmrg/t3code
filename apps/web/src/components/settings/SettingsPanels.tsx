@@ -1,3 +1,4 @@
+import { TerminalThemePicker } from "./TerminalThemePicker";
 import { SettingsGroup } from "./SettingsGroup";
 import { Spinner } from "~/components/ui/spinner";
 import { NotificationSettings } from "./NotificationSettings";
@@ -1631,6 +1632,16 @@ function CodeFontRow({
   );
 }
 
+function TerminalThemeRow() {
+  return (
+    <SettingsRow
+      {...searchableSetting("terminal-theme")}
+      description="Choose a terminal palette for this device, or follow the app theme."
+      control={<TerminalThemePicker />}
+    />
+  );
+}
+
 function TerminalFontRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -1734,6 +1745,7 @@ function FontSettingsGroup() {
       <PromptFontRow />
       <CodeFontRow />
       <TerminalFontRow />
+      <TerminalThemeRow />
       <FontSmoothingRow />
     </>
   );
@@ -1770,6 +1782,7 @@ function SimpleFontRows() {
           </>
         }
       />
+      <TerminalThemeRow />
     </>
   );
 }

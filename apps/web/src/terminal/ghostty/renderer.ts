@@ -24,9 +24,8 @@ function cssColor(color: GhosttyColor): string {
 }
 
 function sameTextStyle(left: GhosttyCell, right: GhosttyCell): boolean {
-  // Selection deliberately does not participate: it only tints the background
-  // overlay, and splitting a text run at a selection boundary visibly shifts
-  // glyph spacing whenever the face's true advance differs from the cell width.
+  // The caller only splits at selection boundaries when a palette specifies
+  // selection text. Background-only selections keep their original text runs.
   return (
     ghosttyColorsEqual(left.foreground, right.foreground) &&
     left.bold === right.bold &&
@@ -103,6 +102,8 @@ export function renderGhosttySnapshot(options: {
   readonly previousCursorY?: number | null;
   readonly focused?: boolean;
   readonly selectionBackground?: string;
+  readonly selectionForeground?: string;
+  readonly cursorText?: string;
   readonly hoveredLinkRange?: GhosttyCellRange | null;
   /** Vertical origin of row 0; defaults to the horizontal padding. */
   readonly originY?: number;
@@ -193,7 +194,13 @@ export function renderGhosttySnapshot(options: {
         runStart += 1;
         continue;
       }
-      const runEnd = ghosttyTextRunEnd(row.cells, runStart, (cell) => sameTextStyle(cell, first));
+      const runEnd = ghosttyTextRunEnd(
+        row.cells,
+        runStart,
+        (cell) =>
+          sameTextStyle(cell, first) &&
+          (options.selectionForeground === undefined || cell.selected === first.selected),
+      );
       const text = row.cells
         .slice(runStart, runEnd)
         .map((cell) => cell.text)
@@ -209,7 +216,10 @@ export function renderGhosttySnapshot(options: {
         );
         context.clip();
         context.font = fontForCell(first, fontSize, fontFamily);
-        context.fillStyle = cssColor(first.foreground);
+        context.fillStyle =
+          first.selected && options.selectionForeground !== undefined
+            ? options.selectionForeground
+            : cssColor(first.foreground);
         context.fillText(
           text,
           padding + runStart * metrics.width,
@@ -232,7 +242,10 @@ export function renderGhosttySnapshot(options: {
       if (!cell || (!cell.underline && !cell.strikethrough && !cell.overline && !hoveredLink)) {
         continue;
       }
-      context.fillStyle = cssColor(cell.foreground);
+      context.fillStyle =
+        cell.selected && options.selectionForeground !== undefined
+          ? options.selectionForeground
+          : cssColor(cell.foreground);
       const left = padding + column * metrics.width;
       if (cell.underline || hoveredLink) {
         context.fillRect(left, top + metrics.height - 2, metrics.width, 1);
@@ -264,7 +277,7 @@ export function renderGhosttySnapshot(options: {
       const cell = snapshot.rowData[snapshot.cursorY]?.cells[snapshot.cursorX];
       if (cell?.text) {
         context.font = fontForCell(cell, fontSize, fontFamily);
-        context.fillStyle = cssColor(snapshot.background);
+        context.fillStyle = options.cursorText ?? cssColor(snapshot.background);
         context.fillText(cell.text, left, top + metrics.baseline, metrics.width);
       }
     }

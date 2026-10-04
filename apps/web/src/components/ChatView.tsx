@@ -1049,6 +1049,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     [panelTerminalIds, serverOrderedTerminalIds, terminalUiState.terminalIds],
   );
   const storeSetTerminalHeight = useTerminalUiStateStore((state) => state.setTerminalHeight);
+  const storeSetTerminalOpen = useTerminalUiStateStore((state) => state.setTerminalOpen);
   const storeSplitTerminal = useTerminalUiStateStore((state) => state.splitTerminal);
   const storeSplitTerminalVertical = useTerminalUiStateStore(
     (state) => state.splitTerminalVertical,
@@ -1106,6 +1107,9 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
     setLocalFocusRequestId((value) => value + 1);
   }, [visible]);
 
+  const hideTerminal = useCallback(() => {
+    storeSetTerminalOpen(threadRef, false);
+  }, [storeSetTerminalOpen, threadRef]);
   const setTerminalHeight = useCallback(
     (height: number) => {
       storeSetTerminalHeight(threadRef, height);
@@ -1291,6 +1295,7 @@ const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDra
           keybindings={keybindings}
           onActiveTerminalChange={activateTerminal}
           onCloseTerminal={closeTerminal}
+          onHide={hideTerminal}
           onHeightChange={setTerminalHeight}
           onAddTerminalContext={handleAddTerminalContext}
           terminalLabelsById={terminalLabelsById}

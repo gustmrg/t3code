@@ -2,6 +2,13 @@
   "customNotices": [
     {
       "bundles": ["assets", "desktop", "web"],
+      "license": "MIT",
+      "name": "iTerm2 Color Schemes (Ghostty themes)",
+      "noticeFile": "apps/web/src/terminal/themes/LICENSE",
+      "sourceUrl": "https://github.com/mbadolato/iTerm2-Color-Schemes"
+    },
+    {
+      "bundles": ["assets", "desktop", "web"],
       "license": "CC0-1.0",
       "name": "Notification Sound 1 by deadrobotmusic",
       "sourceUrl": "https://freesound.org/people/deadrobotmusic/sounds/750607/",

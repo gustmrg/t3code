@@ -251,6 +251,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["typography family size monospace code blocks diffs file previews"],
   },
   {
+    id: "terminal-theme",
+    title: "Terminal theme",
+    to: "/settings/appearance",
+    searchTerms: ["ghostty terminal colors palette presets"],
+  },
+  {
     id: "terminal-font",
     title: "Terminal font",
     to: "/settings/appearance",

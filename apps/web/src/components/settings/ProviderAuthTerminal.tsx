@@ -2,7 +2,7 @@ import type { ProviderAuthResponse } from "@t3tools/contracts";
 import { useEffect, useRef, useState } from "react";
 import { GhosttyTerminalSurface } from "../../terminal/ghostty/surface";
 import { ensureLocalApi } from "../../localApi";
-import { terminalThemeFromApp } from "../ThreadTerminalDrawer";
+import { terminalThemeFromApp, observeTerminalTheme } from "../../terminal/terminalTheme";
 
 /** Loaded only for an interactive login. PTY input is serialized by the parent. */
 export default function ProviderAuthTerminal({
@@ -32,6 +32,9 @@ export default function ProviderAuthTerminal({
     const element = mount.current;
     if (!element) return;
     let disposed = false;
+    const stopObservingTheme = observeTerminalTheme(() => {
+      surface.current?.setTheme(terminalThemeFromApp(element));
+    });
     void GhosttyTerminalSurface.create(element, {
       theme: terminalThemeFromApp(element),
       font: { size: 13 },
@@ -53,12 +56,14 @@ export default function ProviderAuthTerminal({
           return;
         }
         surface.current = terminal;
+        terminal.setTheme(terminalThemeFromApp(element));
         terminal.write(latest.current.output);
         written.current = latest.current.offset;
       })
       .catch(() => setError("Could not load the sign-in terminal. Cancel and retry sign-in."));
     return () => {
       disposed = true;
+      stopObservingTheme();
       surface.current?.dispose();
       surface.current = null;
     };

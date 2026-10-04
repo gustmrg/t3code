@@ -176,6 +176,62 @@ describe("renderGhosttySnapshot", () => {
     ]);
   });
 
+  it("uses preset selection and cursor text colors", () => {
+    const fillTextCalls: unknown[][] = [];
+    let fillStyle = "";
+    const context = {
+      canvas: { width: 200, height: 40 },
+      beginPath: () => {},
+      clip: () => {},
+      fillRect: () => {},
+      fillText: (...args: unknown[]) => fillTextCalls.push([args[0], fillStyle]),
+      rect: () => {},
+      resetTransform: () => {},
+      restore: () => {},
+      save: () => {},
+      set fillStyle(value: string) {
+        fillStyle = value;
+      },
+      set font(_value: string) {},
+      set textBaseline(_value: string) {},
+    } as unknown as CanvasRenderingContext2D;
+    const cells = [cell("a"), { ...cell("b"), selected: true }, cell("x")];
+    const snapshot: GhosttySnapshot = {
+      cols: 3,
+      rows: 1,
+      foreground: { r: 255, g: 255, b: 255 },
+      background: { r: 0, g: 0, b: 0 },
+      cursor: { r: 255, g: 255, b: 255 },
+      cursorX: 2,
+      cursorY: 0,
+      cursorVisible: true,
+      cursorBlinking: false,
+      cursorStyle: 1,
+      dirtyRows: new Set([0]),
+      rowData: [{ cells, text: "abx", isWrapContinuation: false, wrapsToNext: false }],
+    };
+
+    renderGhosttySnapshot({
+      context,
+      snapshot,
+      metrics: { width: 7.2, height: 16, baseline: 11 },
+      fontSize: 12,
+      fontFamily: "monospace",
+      padding: 4,
+      forceFull: false,
+      cursorOn: true,
+      selectionForeground: "#123456",
+      cursorText: "#654321",
+    });
+
+    expect(fillTextCalls).toEqual([
+      ["a", "rgb(255, 255, 255)"],
+      ["b", "#123456"],
+      ["x", "rgb(255, 255, 255)"],
+      ["x", "#654321"],
+    ]);
+  });
+
   it("repaints the cell without an overlay during the blink off phase", () => {
     const fillTextCalls: unknown[][] = [];
     const context = {

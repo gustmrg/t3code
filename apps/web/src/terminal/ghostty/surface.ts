@@ -1849,6 +1849,10 @@ export class GhosttyTerminalSurface {
       previousCursorY: this.renderedCursorY,
       focused: this.focused,
       hoveredLinkRange: this.hoveredLink?.range ?? null,
+      ...(this.theme.selectionForeground !== undefined
+        ? { selectionForeground: this.theme.selectionForeground }
+        : {}),
+      ...(this.theme.cursorText !== undefined ? { cursorText: this.theme.cursorText } : {}),
       ...(this.theme.selectionBackground !== undefined
         ? { selectionBackground: this.theme.selectionBackground }
         : {}),
