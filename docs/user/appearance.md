@@ -93,3 +93,5 @@ view.
 
 Write updates to a temporary file and rename it into place so clients never read a partial theme.
 Invalid files are not published.
+
+On web and desktop, **Settings → Appearance → Typography** lets you search the Ghostty theme catalog and choose a terminal palette independently of the app. The choice is saved on this device and applies to open terminals immediately. Choose **Follow app theme** to restore the app’s terminal colors.

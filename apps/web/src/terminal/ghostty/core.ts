@@ -70,6 +70,10 @@ export interface GhosttyTheme {
   readonly cursor: GhosttyColor;
   /** CSS color the renderer overlays on selected cells; not sent to Ghostty. */
   readonly selectionBackground?: string;
+  readonly selectionForeground?: string;
+  readonly cursorText?: string;
+  /** ANSI colors 0–15; the remaining entries keep Ghostty defaults. */
+  readonly palette?: readonly GhosttyColor[];
 }
 
 export interface GhosttyCell {
@@ -388,6 +392,21 @@ export class GhosttyTerminalCore {
       this.runtime.call("ghostty_terminal_set", this.terminal, option, color);
     }
     this.runtime.free(color, 3);
+    // Reset defaults on every switch, including returning to Follow app theme.
+    // Ghostty preserves application OSC overrides independently of defaults.
+    this.runtime.call("ghostty_terminal_set", this.terminal, 14, 0);
+    if (theme.palette) {
+      const palette = this.runtime.alloc(256 * 3);
+      try {
+        this.runtime.call("ghostty_terminal_get", this.terminal, 25, palette);
+        theme.palette.slice(0, 16).forEach(({ r, g, b }, index) => {
+          this.runtime.bytes(palette + index * 3, 3).set([r, g, b]);
+        });
+        this.runtime.call("ghostty_terminal_set", this.terminal, 14, palette);
+      } finally {
+        this.runtime.free(palette, 256 * 3);
+      }
+    }
   }
 
   scroll(deltaRows: number): void {

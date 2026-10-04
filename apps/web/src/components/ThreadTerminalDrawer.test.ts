@@ -1,3 +1,4 @@
+import { terminalThemeFromApp } from "../terminal/terminalTheme";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -6,7 +7,6 @@ import {
   terminalContextMenuItems,
   terminalSelectionLineRange,
   terminalSelectionMenuItems,
-  terminalThemeFromApp,
 } from "./ThreadTerminalDrawer";
 
 describe("terminal selection menus", () => {

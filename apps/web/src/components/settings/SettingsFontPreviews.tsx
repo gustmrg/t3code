@@ -2,7 +2,7 @@ import { preloadPatchFile } from "@pierre/diffs/ssr";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "../ComposerPromptEditor";
 import { EMPTY_COMPOSER_CONTEXT_RECORDS } from "../composerContextPresentation";
-import { terminalThemeFromApp } from "../ThreadTerminalDrawer";
+import { terminalThemeFromApp, observeTerminalTheme } from "../../terminal/terminalTheme";
 import { useTheme } from "../../hooks/useTheme";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import { resolveDiffThemeName, type DiffThemeName } from "../../lib/diffRendering";
@@ -183,7 +183,6 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
   const mountRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<GhosttyTerminalSurface | null>(null);
   const fontRef = useRef({ family, size });
-  const { theme, resolvedTheme } = useTheme();
 
   useEffect(() => {
     const current = fontRef.current;
@@ -192,14 +191,14 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
     void surfaceRef.current?.setFont(previewTerminalFont(family, size));
   }, [family, size]);
 
-  // Re-read the terminal tokens on any theme change — switching between two
-  // palettes can leave resolvedTheme (light/dark) untouched.
-  useEffect(() => {
-    const mount = mountRef.current;
-    const surface = surfaceRef.current;
-    if (!mount || !surface) return;
-    surface.setTheme(terminalThemeFromApp(mount));
-  }, [theme, resolvedTheme]);
+  useEffect(
+    () =>
+      observeTerminalTheme(() => {
+        const mount = mountRef.current;
+        if (mount) surfaceRef.current?.setTheme(terminalThemeFromApp(mount));
+      }),
+    [],
+  );
 
   useEffect(() => {
     const mount = mountRef.current;
