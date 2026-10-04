@@ -24,7 +24,7 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { getDriverOption } from "../settings/providerDriverMeta";
 import { RedactedSensitiveText } from "../settings/RedactedSensitiveText";
 import { Button } from "../ui/button";
-import { OpenAI } from "../Icons";
+import { OpenAI, ZaiIcon } from "../Icons";
 import { Alert, AlertTitle } from "../ui/alert";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
@@ -76,6 +76,9 @@ function AccountAvatar({
   readonly account: LimitAccount;
   readonly className?: string;
 }) {
+  if (account.limits.service === "GLM Coding Plan") {
+    return <ZaiIcon aria-label="Z.AI" className={cn("size-5 shrink-0", className)} />;
+  }
   if (account.redeem) {
     return (
       <ProviderInstanceIcon
@@ -187,6 +190,20 @@ function SegmentPopover({
       </div>
       <div className="flex flex-col gap-1 border-t border-border/60 pt-2.5">
         <Row label="Left">{remaining}%</Row>
+        {window.credits ? (
+          <Row label="Credits">
+            {window.credits.remaining.toLocaleString()} / {window.credits.total.toLocaleString()}{" "}
+            left
+          </Row>
+        ) : null}
+        {window.resetCards ? (
+          <Row label="Reset cards">
+            {window.resetCards.availableCount} available
+            {window.resetCards.nextExpiresAt
+              ? ` · next expires ${formatUpcomingTimestamp(window.resetCards.nextExpiresAt, timestampFormat, now)}`
+              : ""}
+          </Row>
+        ) : null}
         {window.resetsAt ? (
           <Row label="Resets">
             {formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)}
@@ -243,7 +260,8 @@ function PoolSegment({
   const [open, setOpen] = useState(false);
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
-  const credits = account.limits.resetCredits?.availableCount ?? 0;
+  const credits =
+    window.resetCards?.availableCount ?? account.limits.resetCredits?.availableCount ?? 0;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -252,7 +270,7 @@ function PoolSegment({
           <button
             type="button"
             style={{ gridColumn: index, gridRow: 1 }}
-            aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${credits === 1 ? "credit" : "credits"} banked` : ""}`}
+            aria-label={`${account.displayName ?? (account.email ? accountInitials(account.email) : account.driver)}: ${remaining}% left${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${window.resetCards ? "cards available" : `${credits === 1 ? "credit" : "credits"} banked`}` : ""}`}
             className="relative h-5 min-w-0 cursor-pointer overflow-hidden rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-border @2xl/pool:h-8"
           />
         }
@@ -353,7 +371,8 @@ function LegendRow({
 }) {
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
-  const credits = account.limits.resetCredits?.availableCount ?? 0;
+  const credits =
+    window.resetCards?.availableCount ?? account.limits.resetCredits?.availableCount ?? 0;
   return (
     <PopoverTrigger
       style={{ gridColumn: "1 / -1", gridRow: index + 1 }}
@@ -384,7 +403,10 @@ function LegendRow({
               {credits}
             </span>
             <span className="sr-only">
-              {credits} reset {credits === 1 ? "credit" : "credits"} banked
+              {credits} reset{" "}
+              {window.resetCards
+                ? "cards available"
+                : `${credits === 1 ? "credit" : "credits"} banked`}
             </span>
           </>
         ) : null}
@@ -530,18 +552,22 @@ function PoolWindowCard({
 
 function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: number }) {
   const color = barColor(pool.driver);
-  const label = getDriverOption(pool.driver)?.label ?? String(pool.driver);
+  const label = pool.label ?? getDriverOption(pool.driver)?.label ?? String(pool.driver);
   const windows = displayLimitWindows(pool);
   return (
     <section className="flex flex-col gap-3">
       <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <ProviderInstanceIcon
-          driverKind={pool.driver}
-          displayName={label}
-          indicatorBackground="var(--background)"
-          className="size-5"
-          iconClassName="size-4 text-foreground/80"
-        />
+        {pool.label === "GLM Coding Plan" ? (
+          <ZaiIcon aria-label="Z.AI" className="size-5 shrink-0" />
+        ) : (
+          <ProviderInstanceIcon
+            driverKind={pool.driver}
+            displayName={label}
+            indicatorBackground="var(--background)"
+            className="size-5"
+            iconClassName="size-4 text-foreground/80"
+          />
+        )}
         {label}
       </h2>
       {windows.map((window) => {
@@ -591,7 +617,7 @@ export function UsageLimitsPooled({
         </p>
       ) : null}
       {pools.map((pool, index) => (
-        <Fragment key={pool.driver}>
+        <Fragment key={pool.key}>
           {index === cursorPromptAt ? cursorPrompt : null}
           <PoolSection pool={pool} now={now} />
         </Fragment>

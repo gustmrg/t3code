@@ -21,7 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
-import { ProviderIcon } from "../../components/ProviderIcon";
+import { ProviderIcon, ZaiIcon } from "../../components/ProviderIcon";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
 import { ResetCredits } from "./UsageLimitsSection";
@@ -151,13 +151,14 @@ function PoolWindowCard({
       <View>
         {pool.columns.map(({ account, window }, index) => {
           if (!window) return null;
-          const credits = account.limits.resetCredits?.availableCount ?? 0;
+          const credits =
+            window.resetCards?.availableCount ?? account.limits.resetCredits?.availableCount ?? 0;
           const resetsIn = formatResetsIn(window, now);
           return (
             <Pressable
               key={account.key}
               accessibilityRole="button"
-              accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset credits banked` : ""}`}
+              accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset ${window.resetCards ? "cards available" : "credits banked"}` : ""}`}
               accessibilityHint="Show account details"
               onPress={() => openAccount(account)}
               className="min-h-[44px] flex-row items-center gap-2 active:opacity-60"
@@ -241,13 +242,17 @@ export function UsageLimitsSection({
       {pools.map((pool, index) => {
         const windows = displayLimitWindows(pool);
         return (
-          <Fragment key={pool.driver}>
+          <Fragment key={pool.key}>
             {index === cursorPromptAt ? cursorPrompt : null}
             <View className="gap-3">
               <View className="flex-row items-center gap-2 px-1">
-                <ProviderIcon provider={pool.driver} size={18} />
+                {pool.label === "GLM Coding Plan" ? (
+                  <ZaiIcon size={18} />
+                ) : (
+                  <ProviderIcon provider={pool.driver} size={18} />
+                )}
                 <Text className="text-base font-t3-medium text-foreground">
-                  {DRIVER_LABEL[pool.driver] ?? pool.driver}
+                  {pool.label ?? DRIVER_LABEL[pool.driver] ?? pool.driver}
                 </Text>
               </View>
               {windows.map((window) => {
@@ -340,7 +345,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const accounts = collectLimitAccounts(selected);
   const account = accounts.find((candidate) => candidate.key === accountKey);
   const pool = collectLimitPools(accounts, now)
-    .find((candidate) => candidate.driver === account?.driver)
+    .find((candidate) => candidate.accounts.some((member) => member.key === accountKey))
     ?.windows.find((candidate) => candidate.id === windowId && candidate.kind === windowKind);
   const window = pool?.members.find((member) => member.account.key === accountKey)?.window;
   const reset = pool?.resets.find((candidate) => candidate.member.account.key === accountKey);
@@ -360,7 +365,11 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
           <>
             <View className="gap-2">
               <View className="flex-row items-center gap-2">
-                <ProviderIcon provider={account.driver} size={24} />
+                {account.limits.service === "GLM Coding Plan" ? (
+                  <ZaiIcon size={24} />
+                ) : (
+                  <ProviderIcon provider={account.driver} size={24} />
+                )}
                 <Text className="flex-1 text-xl font-t3-bold text-foreground">
                   {account.displayName ?? DRIVER_LABEL[account.driver] ?? account.driver}
                 </Text>
@@ -388,6 +397,21 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
               <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
                 {remainingPercent(window)}% left
               </Text>
+
+              {window.credits ? (
+                <Text className="text-sm tabular-nums text-foreground-muted">
+                  {window.credits.remaining.toLocaleString()} /{" "}
+                  {window.credits.total.toLocaleString()} credits left
+                </Text>
+              ) : null}
+              {window.resetCards ? (
+                <Text className="text-sm text-foreground-muted">
+                  {window.resetCards.availableCount} reset cards available
+                  {window.resetCards.nextExpiresAt
+                    ? ` · next expires ${new Date(window.resetCards.nextExpiresAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`
+                    : ""}
+                </Text>
+              ) : null}
               {window.resetsAt ? (
                 <Text selectable className="text-sm text-foreground-muted">
                   Resets{" "}

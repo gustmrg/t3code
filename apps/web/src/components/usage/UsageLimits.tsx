@@ -135,6 +135,20 @@ function WindowBar({
           {timeLeft !== null ? (
             <span className="text-muted-foreground">The line is where even spending would be.</span>
           ) : null}
+          {window.credits ? (
+            <span>
+              {window.credits.remaining.toLocaleString()} / {window.credits.total.toLocaleString()}{" "}
+              credits left
+            </span>
+          ) : null}
+          {window.resetCards ? (
+            <span>
+              {window.resetCards.availableCount} reset cards available
+              {window.resetCards.nextExpiresAt
+                ? ` · next expires ${formatUpcomingTimestamp(window.resetCards.nextExpiresAt, timestampFormat, now)}`
+                : ""}
+            </span>
+          ) : null}
           {resetsAt ? (
             <span className="text-muted-foreground">
               Resets {resetsAt}

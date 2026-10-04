@@ -21,7 +21,7 @@ import { refreshUsageLimits } from "@t3tools/client-runtime/state/usage";
 import { Alert, Linking, Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
-import { ProviderIcon } from "../../components/ProviderIcon";
+import { ProviderIcon, ZaiIcon } from "../../components/ProviderIcon";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -88,6 +88,21 @@ function WindowRow(props: {
           />
         ) : null}
       </View>
+
+      {window.credits ? (
+        <Text className="text-xs tabular-nums text-foreground-tertiary">
+          {window.credits.remaining.toLocaleString()} / {window.credits.total.toLocaleString()}{" "}
+          credits left
+        </Text>
+      ) : null}
+      {window.resetCards ? (
+        <Text className="text-xs text-foreground-tertiary">
+          {window.resetCards.availableCount} reset cards available
+          {window.resetCards.nextExpiresAt
+            ? ` · next expires ${new Date(window.resetCards.nextExpiresAt).toLocaleString()}`
+            : ""}
+        </Text>
+      ) : null}
       {pace || resetsIn ? (
         <View className="flex-row justify-between gap-3">
           <Text className="text-xs text-foreground-tertiary">{pace ? PACE_LABEL[pace] : ""}</Text>
@@ -149,7 +164,11 @@ export function AccountLimits(props: {
       }
     >
       <View className="flex-row items-center gap-2">
-        <ProviderIcon provider={props.driver} size={16} />
+        {limits.service === "GLM Coding Plan" ? (
+          <ZaiIcon size={16} />
+        ) : (
+          <ProviderIcon provider={props.driver} size={16} />
+        )}
         <View className="min-w-0 flex-1 flex-row items-baseline gap-2">
           <Text className="text-base font-t3-medium text-foreground">{props.label}</Text>
           {props.instanceLabel !== props.label ? (

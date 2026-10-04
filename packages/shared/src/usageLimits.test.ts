@@ -55,6 +55,60 @@ function provider(overrides: Partial<ServerProvider>): ServerProvider {
   };
 }
 
+it("keeps GLM separate from Go and deduplicates its account across environments", () => {
+  const openCode = provider({
+    driver: ProviderDriverKind.make("opencode"),
+    instanceId: ProviderInstanceId.make("opencode"),
+    usageLimits: {
+      checkedAt: "2026-10-04T12:00:00.000Z",
+      credentialFingerprint: "go-key-hash",
+      windows: [{ ...window, id: "go_rolling", usedPercent: 20 }],
+      additionalAccounts: [
+        {
+          id: "zai-coding-plan",
+          label: "GLM Coding Plan",
+          plan: "GLM Lite",
+          usageLimits: {
+            checkedAt: "2026-10-04T12:00:00.000Z",
+            service: "GLM Coding Plan",
+            credentialFingerprint: "glm-key-hash",
+            windows: [
+              { ...window, id: "glm_session", usedPercent: 40, resetCards: { availableCount: 5 } },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  const input = new Map([
+    [
+      EnvironmentId.make("laptop"),
+      { entry: { target: { label: "Laptop" } }, serverConfig: { providers: [openCode] } },
+    ],
+    [
+      EnvironmentId.make("desktop"),
+      { entry: { target: { label: "Desktop" } }, serverConfig: { providers: [openCode] } },
+    ],
+  ]);
+  const accounts = collectLimitAccounts(input);
+  expect(accounts).toHaveLength(2);
+  const glm = accounts.find((account) => account.limits.service === "GLM Coding Plan");
+  expect(glm?.environments).toHaveLength(2);
+  expect(glm?.redeem).toBeNull();
+  expect(glm?.plan).toBe("GLM Lite");
+  const pools = collectLimitPools(accounts, now);
+  expect(pools).toHaveLength(2);
+  expect(pools.find((pool) => pool.label === "GLM Coding Plan")?.windows[0]?.remainingPercent).toBe(
+    60,
+  );
+  const report = collectProviderUsageLimits(openCode.instanceId, [openCode], [], now);
+  expect(report?.accounts).toHaveLength(2);
+  expect(new Set(report?.accounts.map((account) => account.id)).size).toBe(2);
+  expect(
+    report?.accounts.find((account) => account.limits.service)?.resetCreditInput,
+  ).toBeUndefined();
+});
+
 describe("pace", () => {
   it("places the clock three fifths through a five-hour window with two hours left", () => {
     expect(elapsedShare(window, now)).toBeCloseTo(0.6);

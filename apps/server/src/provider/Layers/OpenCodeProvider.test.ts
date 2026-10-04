@@ -27,7 +27,7 @@ import {
   openCode2SkillsToServerProviderSkills,
   openCodeCommandsToServerProviderSlashCommands,
 } from "./OpenCodeProvider.ts";
-import { readOpenCodeGoUsageLimits } from "./openCodeUsageLimits.ts";
+import { readOpenCodeUsageLimits } from "./openCodeUsageLimits.ts";
 import { probeOpenCodeRuntime } from "../opencodeVersionProbe.ts";
 import {
   OPENCODE_1_RESPONSES,
@@ -41,7 +41,8 @@ const DEFAULT_VERSION_STDOUT = "opencode 1.14.19\n";
 it.effect("reads Go limits with the instance's XDG credentials and preserves reset times", () =>
   Effect.gen(function* () {
     const resetsAt = "2026-09-17T12:00:00.000Z";
-    const limits = yield* readOpenCodeGoUsageLimits({
+    const limits = yield* readOpenCodeUsageLimits({
+      generation: "v1",
       enabled: true,
       serverUrl: "",
       environment: { XDG_DATA_HOME: "/instance/data", OPENCODE_API_KEY: "env-key" },
@@ -104,7 +105,11 @@ it.effect("does not read local credentials for external or disabled OpenCode ins
       { enabled: true, serverUrl: "https://remote.example" },
       { enabled: false, serverUrl: "" },
     ]) {
-      const limits = yield* readOpenCodeGoUsageLimits({ ...settings, environment: {} }).pipe(
+      const limits = yield* readOpenCodeUsageLimits({
+        ...settings,
+        generation: "v1",
+        environment: {},
+      }).pipe(
         Effect.provideService(
           FileSystem.FileSystem,
           FileSystem.makeNoop({
@@ -129,7 +134,8 @@ it.effect("keeps Go entitlement absence distinct from failed or malformed usage 
       [401, "probeFailed"],
       [200, "probeFailed"],
     ] as const) {
-      const limits = yield* readOpenCodeGoUsageLimits({
+      const limits = yield* readOpenCodeUsageLimits({
+        generation: "v1",
         enabled: true,
         serverUrl: "",
         environment: {

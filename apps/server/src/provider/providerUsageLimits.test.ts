@@ -20,6 +20,45 @@ const weekly = {
 } as const;
 const published = { checkedAt, windows: [session, weekly] };
 
+it("retains a GLM account's quota on probe failure without retaining reset-card inventory", () => {
+  const account = {
+    id: "zai-coding-plan",
+    label: "GLM Coding Plan",
+    plan: "GLM Lite",
+    usageLimits: {
+      checkedAt,
+      service: "GLM Coding Plan",
+      credentialFingerprint: "glm-key",
+      windows: [{ ...session, resetCards: { availableCount: 5 } }],
+    },
+  };
+  const failed = {
+    ...account,
+    usageLimits: {
+      checkedAt,
+      service: "GLM Coding Plan",
+      credentialFingerprint: "glm-key",
+      windows: [],
+      unavailable: { reason: "probeFailed" as const },
+    },
+  };
+  const next = resolveUsageLimitsAfterProbe({
+    published: { ...published, additionalAccounts: [account] },
+    probed: { ...published, additionalAccounts: [failed] },
+  });
+  expect(next?.additionalAccounts?.[0]?.usageLimits.windows).toEqual([session]);
+  expect(next?.additionalAccounts?.[0]?.plan).toBe("GLM Lite");
+  const changedKey = {
+    ...failed,
+    usageLimits: { ...failed.usageLimits, credentialFingerprint: "different-key" },
+  };
+  const changed = resolveUsageLimitsAfterProbe({
+    published: { ...published, additionalAccounts: [account] },
+    probed: { ...published, additionalAccounts: [changedKey] },
+  });
+  expect(changed?.additionalAccounts?.[0]?.usageLimits.unavailable?.reason).toBe("probeFailed");
+});
+
 describe("applyUsageLimitsUpdate", () => {
   it("returns the published object itself when no window moved", () => {
     // Codex repeats the same numbers beside every token-usage tick; the
