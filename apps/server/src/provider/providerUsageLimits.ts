@@ -127,6 +127,31 @@ export function resolveUsageLimitsAfterProbe(input: {
   readonly probed: ServerProviderUsageLimits | undefined;
 }): ServerProviderUsageLimits | undefined {
   const { published, probed } = input;
+  if (probed?.additionalAccounts) {
+    const additionalAccounts = probed.additionalAccounts.map((account) => {
+      const previous = published?.additionalAccounts?.find(
+        (candidate) =>
+          candidate.id === account.id &&
+          candidate.usageLimits.credentialFingerprint === account.usageLimits.credentialFingerprint,
+      );
+      return previous && account.usageLimits.unavailable?.reason === "probeFailed"
+        ? {
+            ...previous,
+            usageLimits: {
+              ...previous.usageLimits,
+              windows: previous.usageLimits.windows.map(
+                ({ resetCards: _cards, ...window }) => window,
+              ),
+            },
+          }
+        : account;
+    });
+    const base =
+      probed.unavailable?.reason === "probeFailed" && published && !published.unavailable
+        ? published
+        : probed;
+    return { ...base, additionalAccounts };
+  }
   if (probed?.unavailable?.reason === "probeFailed" && published && !published.unavailable) {
     return published;
   }

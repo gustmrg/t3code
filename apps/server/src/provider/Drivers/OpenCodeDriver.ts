@@ -34,7 +34,7 @@ import type { ProviderAdapterV2Shape } from "../../orchestration-v2/ProviderAdap
 import * as ServerSettings from "../../serverSettings.ts";
 import type { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
-import { readOpenCodeGoUsageLimits } from "../Layers/openCodeUsageLimits.ts";
+import { readOpenCodeUsageLimits } from "../Layers/openCodeUsageLimits.ts";
 import {
   checkOpenCodeProviderStatus,
   loadOpenCode2Workspace,
@@ -375,11 +375,19 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
             runtimeProbe.refresh,
             loadOpenCode2Models,
           ),
-          usageLimits: readOpenCodeGoUsageLimits({
-            enabled: effectiveConfig.enabled,
-            serverUrl: effectiveConfig.serverUrl,
-            environment: processEnv,
-          }),
+          usageLimits: (effectiveConfig.enabled
+            ? runtimeProbe.get.pipe(Effect.orElseSucceed(() => undefined))
+            : Effect.succeed(undefined)
+          ).pipe(
+            Effect.flatMap((runtime) =>
+              readOpenCodeUsageLimits({
+                enabled: effectiveConfig.enabled && runtime !== undefined,
+                serverUrl: effectiveConfig.serverUrl,
+                generation: runtime?.generation ?? "v1",
+                environment: processEnv,
+              }),
+            ),
+          ),
         },
         { concurrency: "unbounded" },
       ).pipe(

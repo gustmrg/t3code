@@ -100,8 +100,11 @@ closes when you dismiss it or send your next message. It uses the same snapshot 
 anything. The command is offered only for providers that appear under **Usage → Limits**.
 
 OpenCode Go reports its session, weekly, and monthly allowance when OpenCode runs locally in
-the environment. T3 cannot report limits for external OpenCode servers because their credentials
-belong to the remote server. Cursor reports
+the environment. GLM Coding Plan also reports its five-hour and weekly credit allowances when
+connected through OpenCode. Connect **Z.AI Coding Plan** in OpenCode; T3 uses that saved API key
+and shows GLM separately from Go. Select a quota to see remaining credits, available reset cards,
+and the nearest card expiration. Reset cards can be redeemed in ZCode. T3 cannot report limits
+for external OpenCode servers because their credentials belong to the remote server. Cursor reports
 its monthly allowance, including separate Auto and API usage, using the CLI login or
 `CURSOR_AUTH_TOKEN`. On macOS, this includes the default Keychain login after you enable Cursor
 usage. Keychain login is used for limits only with Cursor's default API endpoint. If you configure

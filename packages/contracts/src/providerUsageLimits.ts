@@ -24,6 +24,20 @@ export const ServerProviderUsageWindow = Schema.Struct({
   usedPercent: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
   resetsAt: Schema.optional(IsoDateTime),
   windowDurationMins: Schema.optional(NonNegativeInt),
+  /** Credit allowances are separate from token counts and API-equivalent cost. */
+  credits: Schema.optional(
+    Schema.Struct({
+      total: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+      remaining: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+    }),
+  ),
+  /** Read-only reset cards for this window, rather than an account-wide reset. */
+  resetCards: Schema.optional(
+    Schema.Struct({
+      availableCount: NonNegativeInt,
+      nextExpiresAt: Schema.optional(IsoDateTime),
+    }),
+  ),
 });
 export type ServerProviderUsageWindow = typeof ServerProviderUsageWindow.Type;
 
@@ -47,11 +61,13 @@ export type ServerProviderResetCredits = typeof ServerProviderResetCredits.Type;
  * key, Bedrock) from a probe that failed this time, so clients can keep the
  * last good bars for the latter and clear them for the former.
  */
-export const ServerProviderUsageLimits = Schema.Struct({
+const SubscriptionUsageLimits = Schema.Struct({
   checkedAt: IsoDateTime,
   windows: ForwardCompatibleArray(ServerProviderUsageWindow),
   /** Opaque credential identity when the provider does not report an account. */
   credentialFingerprint: Schema.optional(TrimmedNonEmptyString),
+  /** Separates subscriptions accessed through the same runtime, such as Go and GLM. */
+  service: Schema.optional(TrimmedNonEmptyString),
   resetCredits: Schema.optional(ServerProviderResetCredits),
   /** Provider-owned usage settings when quota windows are not available to the client. */
   externalUsage: Schema.optional(
@@ -65,6 +81,20 @@ export const ServerProviderUsageLimits = Schema.Struct({
       reason: Schema.Literals(["unsupported", "probeFailed"]),
       message: Schema.optional(TrimmedNonEmptyString),
     }),
+  ),
+});
+export const ServerProviderUsageLimits = Schema.Struct({
+  ...SubscriptionUsageLimits.fields,
+  /** Other independent subscriptions available through this provider's credentials. */
+  additionalAccounts: Schema.optional(
+    ForwardCompatibleArray(
+      Schema.Struct({
+        id: TrimmedNonEmptyString,
+        label: TrimmedNonEmptyString,
+        plan: Schema.optional(TrimmedNonEmptyString),
+        usageLimits: SubscriptionUsageLimits,
+      }),
+    ),
   ),
 });
 export type ServerProviderUsageLimits = typeof ServerProviderUsageLimits.Type;

@@ -88,6 +88,21 @@ function WindowRow(props: {
           />
         ) : null}
       </View>
+
+      {window.credits ? (
+        <Text className="text-xs tabular-nums text-foreground-tertiary">
+          {window.credits.remaining.toLocaleString()} / {window.credits.total.toLocaleString()}{" "}
+          credits left
+        </Text>
+      ) : null}
+      {window.resetCards ? (
+        <Text className="text-xs text-foreground-tertiary">
+          {window.resetCards.availableCount} reset cards available
+          {window.resetCards.nextExpiresAt
+            ? ` · next expires ${new Date(window.resetCards.nextExpiresAt).toLocaleString()}`
+            : ""}
+        </Text>
+      ) : null}
       {pace || resetsIn ? (
         <View className="flex-row justify-between gap-3">
           <Text className="text-xs text-foreground-tertiary">{pace ? PACE_LABEL[pace] : ""}</Text>

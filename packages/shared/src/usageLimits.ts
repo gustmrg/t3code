@@ -65,13 +65,20 @@ function cursorUsageWindowRank(id: string): number {
 export function providersWithLimits(
   providers: readonly ServerProvider[],
 ): readonly ServerProvider[] {
-  return providers.filter(
-    (provider) =>
-      provider.enabled &&
-      provider.installed &&
-      isProviderAvailable(provider) &&
-      provider.usageLimits !== undefined,
-  );
+  return providers
+    .flatMap((provider) => {
+      if (!provider.enabled || !provider.installed || !isProviderAvailable(provider)) return [];
+      return [
+        provider,
+        ...(provider.usageLimits?.additionalAccounts ?? []).map((account) => ({
+          ...provider,
+          displayName: account.label,
+          auth: { ...provider.auth, email: undefined, label: account.plan },
+          usageLimits: account.usageLimits,
+        })),
+      ];
+    })
+    .filter((provider) => provider.usageLimits !== undefined);
 }
 
 export type LimitPresentations = ReadonlyMap<
@@ -238,7 +245,9 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
           accentColor: provider.accentColor,
           environments: [{ environmentId, label }],
           sourceLabel: null,
-          redeem: { environmentId, input: { instanceId: provider.instanceId } },
+          redeem: provider.usageLimits.service
+            ? null
+            : { environmentId, input: { instanceId: provider.instanceId } },
           limits: provider.usageLimits,
         },
       );
@@ -349,6 +358,8 @@ export interface LimitPoolWindow {
 }
 
 export interface LimitPool {
+  readonly key: string;
+  readonly label: string | undefined;
   readonly driver: ServerProvider["driver"];
   readonly accounts: readonly LimitAccount[];
   readonly windows: readonly LimitPoolWindow[];
@@ -389,13 +400,15 @@ export function collectLimitPools(
   accounts: readonly LimitAccount[],
   now: number,
 ): readonly LimitPool[] {
-  const byDriver = new Map<ServerProvider["driver"], LimitAccount[]>();
+  const byDriver = new Map<string, LimitAccount[]>();
   for (const account of accounts) {
-    const list = byDriver.get(account.driver);
+    const key = `${account.driver}:${account.limits.service ?? ""}`;
+    const list = byDriver.get(key);
     if (list) list.push(account);
-    else byDriver.set(account.driver, [account]);
+    else byDriver.set(key, [account]);
   }
-  return [...byDriver].map(([driver, members]) => {
+  return [...byDriver].map(([key, members]) => {
+    const driver = members[0]!.driver;
     const orderWindow = members
       .flatMap((account) => account.limits.windows)
       .sort((left, right) => WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind])[0];
@@ -411,7 +424,13 @@ export function collectLimitPools(
         accountSortName(left).localeCompare(accountSortName(right)) ||
         left.key.localeCompare(right.key),
     );
-    return { driver, accounts: sorted, windows: poolWindows(sorted, now) };
+    return {
+      key,
+      driver,
+      label: members[0]!.limits.service,
+      accounts: sorted,
+      windows: poolWindows(sorted, now),
+    };
   });
 }
 
@@ -674,13 +693,16 @@ export function collectProviderUsageLimits(
         Date.parse(hubCredits.account.usageLimits.checkedAt) >
           Date.parse(provider.usageLimits.checkedAt));
     accounts.push({
-      id: provider.instanceId,
+      id: provider.usageLimits.service
+        ? (key ?? `${provider.instanceId}:${provider.usageLimits.service}`)
+        : provider.instanceId,
       driver: provider.driver,
       label: `${provider.displayName?.trim() || String(provider.driver)} [${provider.instanceId}]`,
       ...(provider.auth.label ? { plan: provider.auth.label } : {}),
       instanceId: provider.instanceId,
-      resetCreditInput:
-        hubCreditId && hubCredits
+      resetCreditInput: provider.usageLimits.service
+        ? undefined
+        : hubCreditId && hubCredits
           ? {
               sourceId: hubCredits.source.id,
               accountId: hubCredits.account.id,
