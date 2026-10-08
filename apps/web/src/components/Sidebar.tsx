@@ -1949,7 +1949,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                           )}
                         >
                           {topStatus.icon === "working" ? (
-                            <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
+                            <span
+                              aria-hidden
+                              className="inline-flex size-4 shrink-0 motion-safe:animate-status-spin"
+                            >
+                              <CircleDashedIcon className="size-4" />
+                            </span>
                           ) : topStatus.icon === "input" ? (
                             <MessageCircleQuestionIcon aria-hidden className="size-4 shrink-0" />
                           ) : topStatus.icon === "approval" ? (
